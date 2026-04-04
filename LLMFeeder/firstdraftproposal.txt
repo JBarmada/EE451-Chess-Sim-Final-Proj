@@ -1,0 +1,36 @@
+2026-03-11
+Chess Simulation Optimization
+Team Members
+Jad Barmada <barmada@usc.edu>
+Joyce Ng <jsng@usc.edu>
+Eli Fast
+Lian Fouse
+High Level Goals
+Calculate statistics of random chess games to high accuracy.
+What percent is win for white, win for black, and draw
+Maybe some other interesting stats like what percent of games involve queen capture, what percent of checkmates are done by each piece, etc
+Learn CUDA programming
+The idea is to implement this on a GPU
+Chess is actually not well suited for GPU programming due to the high levels of branching, so it may (we’re not sure) be a struggle to beat the CPU since if we have many branches all cores have to wait on all branches, unlike CPU cores. However, we think this can be overcome due to the sheer number of GPU cores, and we will learn a lot in the attempt.
+Background
+Simulating random chess games has been a topic of interest to see if there is an inherent advantage to starting as White or Black. One example of conducting this simulation (https://wismuth.com/chess/random-games.html) found that there is a slight but statistically significant advantage for White but that most games end with insignificant material.
+
+Online discussions on this topic mostly focus on the statistics of the results but not the performance of simulating the games. Random game simulation is a stepping stone to chess engines though, whose performance has been optimized heavily. Top chess engines typically use the CPU only (such as Stockfish) or use GPU to run neural network evaluations (such as Leela Chess Zero). 
+
+This project aims to see if GPUs can be used for exploring chess game states faster than CPUs despite chess not being an ideal candidate for GPU programming due to the levels of branching involved.
+More Concrete Description
+The goal is to simulate billions of chess games where moves are randomly selected and check whether they end in draw, win for white, or win for black. 
+
+Each core of the gpu needs to do the following to make a move:
+Have a representation of the current chess game
+Calculate all legal moves
+Choose one of them at random
+Update the game representation
+Check for win, loss, and draw
+If the game ended, repopulate the core with a fresh board
+
+We will implement different versions of the random chess game simulator using serial C++ code, parallelized C++ using OpenMP, and GPU-parallelized C++ using CUDA. Each version will be evaluated based on how many random chess games can be simulated in a given time span.
+Project Category
+Implement and evaluate
+
+

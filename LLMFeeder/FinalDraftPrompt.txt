@@ -1,0 +1,43 @@
+Use what we have written to fill in the following skeleton
+ 
+Introduction:
+What are we accelerating:
+Why is it non trivial:
+Contributions:
+Deliverable plan
+Work Aim
+Hypothesis:
+what will happen based on our intuition from this course
+Description:
+Parallelization Techniques
+new novel techniques?
+Benchmarks
+Since we are comparing CPU and GPU parallelization, what metrics and what formulas will we use, any popular benchmarks that already exist for chess games?
+Application Description
+Implementation Platform: 
+What platforms are we going to use? CARC, etc
+Evaluation:
+Datasets:
+Eval Metrics:
+Code Base/Deliverables
+
+And adjust according to the following feedback
+Intro section 
+Emphasize: an interesting challenge in applying GPU parallelism to a highly branching problem.
+hypothesis Must be explicit and clear
+include both why we think GPUs may be better but also why it is challenging
+
+
+description:
+parallelization: What we had prior was good. but need to add more details to the GPU descripition
+how the chess state will be represented and how branching/divergence will be handled
+more description on how were simulating chess
+more details on how we rep our game structure and how certain moves will work on the GPU
+
+evaluation needs concrete experimental setup, including hardware platform, workload size, and additional metrics such as speedup or efficiency.
+mention CARC clusters as hardware
+
+
+how we split the code on the gpu
+mention that we'll pivot to checkers if chess is too hard
+
