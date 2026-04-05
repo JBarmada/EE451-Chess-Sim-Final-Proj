@@ -16,6 +16,9 @@ Or use the provided Makefile: make sim1m sim10m sim100m
 #include <chrono>
 #include <map>
 #include <iomanip>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <omp.h>
 #include "chess.hpp"
 
@@ -24,6 +27,19 @@ Or use the provided Makefile: make sim1m sim10m sim100m
 #endif
 
 using namespace chess;
+
+std::string formatSimSize(long long games) {
+    if (games >= 1000000000LL && games % 1000000000LL == 0) {
+        return std::to_string(games / 1000000000LL) + "b";
+    }
+    if (games >= 1000000LL && games % 1000000LL == 0) {
+        return std::to_string(games / 1000000LL) + "m";
+    }
+    if (games >= 1000LL && games % 1000LL == 0) {
+        return std::to_string(games / 1000LL) + "k";
+    }
+    return std::to_string(games);
+}
 
 // Single game statistics
 struct GameAnalytics {
@@ -198,43 +214,62 @@ int main() {
     std::chrono::duration<double> execution_time = end_time - start_time;
     double throughput = NUM_GAMES / execution_time.count();
 
-    // --- Output (unchanged from original) ---
-    std::cout << "\n--- PERFORMANCE ---\n";
-    std::cout << "Execution Time: " << execution_time.count() << " seconds\n";
-    std::cout << "Throughput: " << std::fixed << std::setprecision(2)
-              << throughput << " games/sec\n";
+        std::ostringstream report;
 
-    std::cout << "\n--- CORE OUTCOMES ---\n";
-    std::cout << "White Wins: " << (double)globalStats.whiteWins / NUM_GAMES * 100 << "%\n";
-    std::cout << "Black Wins: " << (double)globalStats.blackWins / NUM_GAMES * 100 << "%\n";
-    std::cout << "Draws: "      << (double)globalStats.draws      / NUM_GAMES * 100 << "%\n";
+    // --- Output (unchanged from original) ---
+        report << "\n--- PERFORMANCE ---\n";
+        report << "Execution Time: " << execution_time.count() << " seconds\n";
+        report << "Throughput: " << std::fixed << std::setprecision(2)
+            << throughput << " games/sec\n";
+
+        report << "\n--- CORE OUTCOMES ---\n";
+        report << "White Wins: " << (double)globalStats.whiteWins / NUM_GAMES * 100 << "%\n";
+        report << "Black Wins: " << (double)globalStats.blackWins / NUM_GAMES * 100 << "%\n";
+        report << "Draws: "      << (double)globalStats.draws      / NUM_GAMES * 100 << "%\n";
 
     double avgPly = std::accumulate(globalStats.gameLengths.begin(),
                                     globalStats.gameLengths.end(), 0.0) / NUM_GAMES;
-    std::cout << "\n--- GAME SHAPE ---\n";
-    std::cout << "Average Length: " << avgPly << " plies\n";
+        report << "\n--- GAME SHAPE ---\n";
+        report << "Average Length: " << avgPly << " plies\n";
     for (const auto& [reason, count] : globalStats.terminationCounts)
-        std::cout << reason << ": " << (double)count / NUM_GAMES * 100 << "%\n";
+         report << reason << ": " << (double)count / NUM_GAMES * 100 << "%\n";
 
-    std::cout << "\n--- EVENT STATISTICS ---\n";
-    std::cout << "Games with ANY capture: "
-              << (double)globalStats.gamesWithAnyCapture  / NUM_GAMES * 100 << "%\n";
-    std::cout << "Games with a Queen capture: "
-              << (double)globalStats.gamesWithQueenCapture / NUM_GAMES * 100 << "%\n";
+        report << "\n--- EVENT STATISTICS ---\n";
+        report << "Games with ANY capture: "
+            << (double)globalStats.gamesWithAnyCapture  / NUM_GAMES * 100 << "%\n";
+        report << "Games with a Queen capture: "
+            << (double)globalStats.gamesWithQueenCapture / NUM_GAMES * 100 << "%\n";
 
     const char* pieceNames[] = {"None","Pawn","Knight","Bishop","Rook","Queen","King"};
 
-    std::cout << "\nFirst Captured Piece Distribution:\n";
+    report << "\nFirst Captured Piece Distribution:\n";
     for (const auto& [piece, count] : globalStats.firstCapturedCounts)
         if (piece != PieceType::NONE)
-            std::cout << pieceNames[static_cast<int>(piece)] << ": "
-                      << (double)count / NUM_GAMES * 100 << "%\n";
+            report << pieceNames[static_cast<int>(piece)] << ": "
+                   << (double)count / NUM_GAMES * 100 << "%\n";
 
-    std::cout << "\nCheckmating Piece Distribution:\n";
+    report << "\nCheckmating Piece Distribution:\n";
     for (const auto& [piece, count] : globalStats.checkmatingPieceCounts)
         if (piece != PieceType::NONE)
-            std::cout << pieceNames[static_cast<int>(piece)] << ": "
-                      << (double)count / NUM_GAMES * 100 << "%\n";
+            report << pieceNames[static_cast<int>(piece)] << ": "
+                   << (double)count / NUM_GAMES * 100 << "%\n";
+
+    const std::string simSize = formatSimSize(NUM_GAMES);
+    const std::filesystem::path resultsDir = std::filesystem::path("results") /
+                                             (simSize + "_openmp") /
+                                             std::to_string(numThreads);
+    std::filesystem::create_directories(resultsDir);
+    const std::filesystem::path outputFile = resultsDir / "summary.txt";
+
+    std::ofstream out(outputFile);
+    if (out) {
+        out << report.str();
+    } else {
+        std::cerr << "Failed to write results file: " << outputFile << "\n";
+    }
+
+    std::cout << report.str();
+    std::cout << "\nSaved results to " << outputFile.string() << "\n";
 
     return 0;
 }
