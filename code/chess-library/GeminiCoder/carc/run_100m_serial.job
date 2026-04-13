@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=chess_100m_serial
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=04:00:00
+#SBATCH --output=carc/logs/run_100m_serial.%j.out
+#SBATCH --error=carc/logs/run_100m_serial.%j.err
+
+# run_100m_serial.job — Run only the 100M game serial simulation.
+# Submit from the carc/ directory:
+#   sbatch carc/run_100m_serial.job
+#
+# Wall time: ~4800s (~80 min). 4hr limit gives ~3x safety buffer.
+
+set -euo pipefail
+
+module purge
+module load gcc
+
+PROJ_DIR="${SLURM_SUBMIT_DIR}/.."
+cd "${PROJ_DIR}"
+
+export OMP_NUM_THREADS=1
+
+echo "============================================================"
+echo "Chess 100M Serial Simulation — CARC Job"
+echo "Job ID:    ${SLURM_JOB_ID}"
+echo "Node:      $(hostname)"
+echo "Started:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "============================================================"
+echo ""
+
+if [[ ! -x "./sim100m_serial" ]]; then
+    echo "ERROR: sim100m_serial not found. Run build.sh first." >&2
+    exit 1
+fi
+
+./sim100m_serial
+
+echo ""
+echo "============================================================"
+echo "Done: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "Result: results/100m_serial/summary.txt"
+echo "============================================================"
