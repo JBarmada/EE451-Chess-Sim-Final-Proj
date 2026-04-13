@@ -1,0 +1,10 @@
+# GeminiCoder chess simulator build artifacts
+code/chess-library/GeminiCoder/sim*
+code/chess-library/GeminiCoder/sanity_*
+code/chess-library/GeminiCoder/*.o
+code/chess-library/GeminiCoder/*.obj
+code/chess-library/GeminiCoder/*.out
+code/chess-library/GeminiCoder/*.exe
+
+# Generated simulation outputs
+# code/chess-library/GeminiCoder/results/

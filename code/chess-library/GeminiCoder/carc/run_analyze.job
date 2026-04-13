@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=chess_analyze
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:15:00
+#SBATCH --output=carc/logs/run_analyze.%j.out
+#SBATCH --error=carc/logs/run_analyze.%j.err
+
+# run_analyze.job — Parse all summary.txt results and generate metrics report.
+# Submitted automatically by submit_all.sh with afterok dependency on all
+# compute jobs. Can also be run manually after jobs complete:
+#   sbatch carc/run_analyze.job
+
+set -euo pipefail
+
+module purge
+module load python
+
+PROJ_DIR="${SLURM_SUBMIT_DIR}/.."
+cd "${PROJ_DIR}"
+
+echo "============================================================"
+echo "Chess Simulation Analysis — CARC Job"
+echo "Job ID:    ${SLURM_JOB_ID}"
+echo "Node:      $(hostname)"
+echo "Started:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "Directory: $(pwd)"
+echo "============================================================"
+echo ""
+
+python3 carc/analyze_results.py \
+    --results-dir results \
+    --output-dir carc/results \
+    --build-manifest carc/build_manifest.txt
+
+echo ""
+echo "============================================================"
+echo "Analysis complete: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "Report: carc/results/report.md"
+echo "CSVs:   carc/results/*.csv"
+echo "============================================================"

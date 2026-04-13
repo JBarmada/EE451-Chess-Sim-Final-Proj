@@ -1,0 +1,10 @@
+size,variant,threads,n_games,execution_time_s,throughput_games_s,moves_per_sec,white_wins_pct,black_wins_pct,draws_pct,avg_length_plies,checkmate_pct,fifty_moves_pct,stalemate_pct,threefold_pct,any_capture_pct,queen_capture_pct,source
+100k,openmp,16,100000,1.10076,90846.32,36420289.688,7.56,7.74,84.71,400.9,15.29,66.28,6.4,12.03,99.86,97.9,results\100k_openmp\16\summary.txt
+100k,serial,1,100000,7.93197,12607.2,5051957.184,7.75,7.66,84.59,400.72,15.4,65.94,6.37,12.29,99.87,97.8,results\100k_serial\summary.txt
+100m,openmp,16,100000000,489.38,204340.17,81901583.53770001,7.66,7.65,84.69,400.81,15.31,66.33,6.29,12.08,99.87,97.86,results\100m_openmp\16\summary.txt
+10m,openmp,16,10000000,56.9232,175675.3,70410660.24,7.66,7.66,84.68,400.8,15.32,66.31,6.3,12.07,99.87,97.86,results\10m_openmp\16\summary.txt
+10m,serial,1,10000000,480.4,20816.01,8345138.408999999,7.64,7.64,84.71,400.9,15.29,66.35,6.28,12.08,99.87,97.86,results\10m_serial\summary.txt
+1k,openmp,16,,0.0171871,58183.17,23610148.5543,6.8,7.4,85.8,405.79,14.2,66.7,5.5,13.6,99.9,97.4,results\1k_openmp\16\summary.txt
+1k,serial,1,,0.0534916,18694.52,7348254.9764,7.9,9.5,82.6,393.07,17.4,64.7,5.7,12.2,99.8,97.6,results\1k_serial\summary.txt
+1m,openmp,16,1000000,7.07363,141370.09,56679510.1837,7.64,7.65,84.71,400.93,15.29,66.3,6.27,12.14,99.88,97.86,results\1m_openmp\16\summary.txt
+1m,serial,1,1000000,46.0915,21695.96,8697259.485199999,7.63,7.66,84.71,400.87,15.29,66.32,6.29,12.1,99.87,97.87,results\1m_serial\summary.txt

@@ -1,0 +1,5 @@
+size,n_games,measured_at_threads,measured_speedup,serial_frac_pct,parallel_frac_pct,amdahl_max_speedup
+1k,,16,3.11,27.61,72.39,3.62
+100k,100000,16,7.21,8.14,91.86,12.29
+1m,1000000,16,6.52,9.70,90.30,10.31
+10m,10000000,16,8.44,5.97,94.03,16.74
