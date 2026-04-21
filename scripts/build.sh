@@ -27,8 +27,9 @@ echo "Build environment logged to scripts/build_manifest.txt"
 cat scripts/build_manifest.txt
 echo ""
 
-SERIAL_TARGETS="sim_serial_100k sim_serial_1m sim_serial_10m sim_serial_100m"
-OPENMP_TARGETS="sim_openmp_100k sim_openmp_1m sim_openmp_10m sim_openmp_100m"
+# All sizes 1k–1b (1b included — only takes a moment to compile)
+SERIAL_TARGETS="sim_serial_1k sim_serial_10k sim_serial_100k sim_serial_1m sim_serial_10m sim_serial_100m sim_serial_1b"
+OPENMP_TARGETS="sim_openmp_1k sim_openmp_10k sim_openmp_100k sim_openmp_1m sim_openmp_10m sim_openmp_100m sim_openmp_1b"
 
 echo "Building serial targets..."
 for target in ${SERIAL_TARGETS}; do
@@ -56,8 +57,8 @@ done
 
 if [[ "${ALL_OK}" == "true" ]]; then
     echo ""
-    echo "All 8 binaries built successfully."
-    echo "Next step: bash scripts/submit_all.sh"
+    echo "All 14 binaries built successfully."
+    echo "Next step: bash scripts/submit_all_runs.sh"
 else
     echo "ERROR: Some binaries missing." >&2
     exit 1

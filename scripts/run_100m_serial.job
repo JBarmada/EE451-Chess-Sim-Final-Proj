@@ -1,63 +1,38 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=chess_100m_serial
+#SBATCH --job-name=chess_serial_100m
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=04:00:00
 #SBATCH --output=scripts/logs/run_100m_serial.%j.out
 #SBATCH --error=scripts/logs/run_100m_serial.%j.err
+#
+# Standalone 100M serial run (used by submit_100m_serial.sh).
+# Wall budget: ~4800s (~80 min). 4hr gives ~3x buffer.
 
 set -euo pipefail
 
 module purge
 module load gcc
 
-PROJ_DIR="${SLURM_SUBMIT_DIR}"
-cd "${PROJ_DIR}"
-
+cd "${SLURM_SUBMIT_DIR}"
 export OMP_NUM_THREADS=1
 
 RUN_BASE="results/cpu_serial/${RUN_ID}"
 mkdir -p "${RUN_BASE}/sim" "${RUN_BASE}/csv" "${RUN_BASE}/analysis"
 
-# Hardware capture
-{
-    echo "=== Job Info ==="
-    echo "SLURM_JOB_ID: ${SLURM_JOB_ID}"
-    echo "SLURM_JOB_NODELIST: ${SLURM_JOB_NODELIST}"
-    echo "RUN_ID: ${RUN_ID}"
-    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo ""
-    echo "=== CPU ==="
-    lscpu
-    echo ""
-    echo "=== Memory ==="
-    free -h
-    echo ""
-    echo "=== NUMA Topology ==="
-    numactl --hardware 2>/dev/null || echo "numactl not available"
-    echo ""
-    echo "=== CPU Frequency ==="
-    cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null && echo "Hz (max)" || echo "N/A"
-    echo ""
-    echo "=== /proc/cpuinfo (first core) ==="
-    sed '/^$/q' /proc/cpuinfo
-    echo ""
-    echo "=== Compiler ==="
-    g++ --version
-    echo ""
-    echo "=== Loaded Modules ==="
-    module list 2>&1
-    echo ""
-    echo "=== SLURM Job Detail ==="
-    scontrol show job "${SLURM_JOB_ID}" 2>/dev/null || echo "N/A"
-    echo ""
-    echo "=== GPU ==="
-    nvidia-smi 2>/dev/null || echo "No GPU / nvidia-smi not available"
-} > "${RUN_BASE}/sim/hardware.txt"
+echo "=== Chess Serial 100M Run ==="
+echo "RUN_ID:  ${RUN_ID}"
+echo "Node:    $(hostname)"
+echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo ""
+
+bash scripts/capture_hardware.sh "${RUN_BASE}/sim/hardware.txt"
 
 export CHESS_RUN_DIR="${RUN_BASE}/sim"
 
 echo "--- [$(date -u +%H:%M:%S)] sim_serial_100m ---"
 ./sim_serial_100m
 echo ""
-echo "Done. Result in ${RUN_BASE}/sim/"
+
+echo "=== Done: $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+echo "Result: ${RUN_BASE}/sim/100m_serial/summary.txt"

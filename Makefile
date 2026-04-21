@@ -7,8 +7,8 @@ OPENMP_SRC   = CPU_OpenMP/openMP.cpp
 SERIAL_INC   = -ICPU_Serial
 OPENMP_INC   = -ICPU_OpenMP
 
-SERIAL_TARGETS = sim_serial_100k sim_serial_1m sim_serial_10m sim_serial_100m sim_serial_1b
-OPENMP_TARGETS = sim_openmp_100k sim_openmp_1m sim_openmp_10m sim_openmp_100m sim_openmp_1b
+SERIAL_TARGETS = sim_serial_1k sim_serial_10k sim_serial_100k sim_serial_1m sim_serial_10m sim_serial_100m sim_serial_1b
+OPENMP_TARGETS = sim_openmp_1k sim_openmp_10k sim_openmp_100k sim_openmp_1m sim_openmp_10m sim_openmp_100m sim_openmp_1b
 
 MODE ?= both
 
@@ -29,6 +29,12 @@ serial: $(SERIAL_TARGETS)
 openmp: $(OPENMP_TARGETS)
 
 # Serial builds
+sim_serial_1k: $(SERIAL_SRC)
+	$(CXX) $(CXXFLAGS) $(SERIAL_INC) -DNUM_GAMES=1000 $< -o $@
+
+sim_serial_10k: $(SERIAL_SRC)
+	$(CXX) $(CXXFLAGS) $(SERIAL_INC) -DNUM_GAMES=10000 $< -o $@
+
 sim_serial_100k: $(SERIAL_SRC)
 	$(CXX) $(CXXFLAGS) $(SERIAL_INC) -DNUM_GAMES=100000 $< -o $@
 
@@ -45,6 +51,12 @@ sim_serial_1b: $(SERIAL_SRC)
 	$(CXX) $(CXXFLAGS) $(SERIAL_INC) -DNUM_GAMES=1000000000 $< -o $@
 
 # OpenMP builds
+sim_openmp_1k: $(OPENMP_SRC)
+	$(CXX) $(CXXFLAGS) $(OPENMP_INC) $(OPENMP_FLAGS) -DNUM_GAMES=1000 $< -o $@
+
+sim_openmp_10k: $(OPENMP_SRC)
+	$(CXX) $(CXXFLAGS) $(OPENMP_INC) $(OPENMP_FLAGS) -DNUM_GAMES=10000 $< -o $@
+
 sim_openmp_100k: $(OPENMP_SRC)
 	$(CXX) $(CXXFLAGS) $(OPENMP_INC) $(OPENMP_FLAGS) -DNUM_GAMES=100000 $< -o $@
 

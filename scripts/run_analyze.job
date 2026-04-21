@@ -11,20 +11,28 @@ set -euo pipefail
 module purge
 module load python
 
-PROJ_DIR="${SLURM_SUBMIT_DIR}"
-cd "${PROJ_DIR}"
+cd "${SLURM_SUBMIT_DIR}"
 
 SERIAL_SIM_DIR="results/cpu_serial/${RUN_ID}/sim"
 OPENMP_SIM_DIR="results/cpu_openmp/${RUN_ID}/sim"
-SERIAL_CSV_DIR="results/cpu_serial/${RUN_ID}/csv"
-SERIAL_ANALYSIS_DIR="results/cpu_serial/${RUN_ID}/analysis"
+CSV_DIR="results/cpu_serial/${RUN_ID}/csv"
+ANALYSIS_DIR="results/cpu_serial/${RUN_ID}/analysis"
+
+echo "=== Chess Analysis ==="
+echo "RUN_ID: ${RUN_ID}"
+echo "Serial sim dir:  ${SERIAL_SIM_DIR}"
+echo "OpenMP sim dir:  ${OPENMP_SIM_DIR}"
+echo ""
 
 python3 scripts/analyze_results.py \
     --serial-sim-dir  "${SERIAL_SIM_DIR}" \
     --openmp-sim-dir  "${OPENMP_SIM_DIR}" \
-    --csv-dir         "${SERIAL_CSV_DIR}" \
-    --analysis-dir    "${SERIAL_ANALYSIS_DIR}" \
+    --csv-dir         "${CSV_DIR}" \
+    --analysis-dir    "${ANALYSIS_DIR}" \
     --build-manifest  scripts/build_manifest.txt \
     --run-id          "${RUN_ID}"
 
-echo "Analysis complete. Report: ${SERIAL_ANALYSIS_DIR}/report.md"
+echo ""
+echo "=== Analysis complete: $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+echo "Report: ${ANALYSIS_DIR}/report.md"
+echo "CSVs:   ${CSV_DIR}/"

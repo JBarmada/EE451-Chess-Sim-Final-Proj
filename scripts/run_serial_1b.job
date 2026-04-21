@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=chess_serial_1b
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=16:00:00
+#SBATCH --output=scripts/logs/run_serial_1b.%j.out
+#SBATCH --error=scripts/logs/run_serial_1b.%j.err
+#
+# Serial 1B games — long-running baseline.
+# Wall budget: ~13,300s (~3.7hrs at 20k games/sec, with 4x buffer = 16hrs).
+
+set -euo pipefail
+
+module purge
+module load gcc
+
+cd "${SLURM_SUBMIT_DIR}"
+export OMP_NUM_THREADS=1
+
+RUN_BASE="results/cpu_serial/${RUN_ID}"
+mkdir -p "${RUN_BASE}/sim" "${RUN_BASE}/csv" "${RUN_BASE}/analysis"
+
+echo "=== Chess Serial 1B Run ==="
+echo "RUN_ID:  ${RUN_ID}"
+echo "Node:    $(hostname)"
+echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo ""
+
+# Hardware info (append to existing file if present from run_serial.job, else create)
+bash scripts/capture_hardware.sh "${RUN_BASE}/sim/hardware_1b.txt"
+
+export CHESS_RUN_DIR="${RUN_BASE}/sim"
+
+echo "--- [$(date -u +%H:%M:%S)] sim_serial_1b ---"
+./sim_serial_1b
+echo ""
+
+echo "=== Serial 1B complete: $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+echo "Result: ${RUN_BASE}/sim/1b_serial/summary.txt"
