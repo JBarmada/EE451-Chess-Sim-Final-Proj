@@ -6,10 +6,16 @@ all evaluation metrics for the CARC HPC study.
 Standard library only (no numpy/pandas). Works with Python 3.11+.
 
 Usage:
-    python3 carc/analyze_results.py \
-        --results-dir results \
-        --output-dir carc/results \
-        [--build-manifest carc/build_manifest.txt]
+    python3 scripts/analyze_results.py \
+        --serial-sim-dir  results/cpu_serial/{RUN_ID}/sim \
+        --openmp-sim-dir  results/cpu_openmp/{RUN_ID}/sim \
+        --csv-dir         results/cpu_serial/{RUN_ID}/csv \
+        --analysis-dir    results/cpu_serial/{RUN_ID}/analysis \
+        [--build-manifest scripts/build_manifest.txt] \
+        [--run-id         {RUN_ID}]
+
+Legacy single-dir usage (still supported):
+    python3 scripts/analyze_results.py --results-dir results
 """
 
 import argparse
@@ -173,28 +179,53 @@ def size_sort_key(size: str) -> int:
 # Main
 # ---------------------------------------------------------------------------
 
+def discover_results(serial_sim_dir, openmp_sim_dir, legacy_results_dir):
+    """Discover all summary.txt files from the given sim directories."""
+    summary_files = []
+    if serial_sim_dir and Path(serial_sim_dir).is_dir():
+        summary_files += list(Path(serial_sim_dir).glob("**/summary.txt"))
+    if openmp_sim_dir and Path(openmp_sim_dir).is_dir():
+        summary_files += list(Path(openmp_sim_dir).glob("**/summary.txt"))
+    if legacy_results_dir and Path(legacy_results_dir).is_dir():
+        summary_files += list(Path(legacy_results_dir).glob("**/summary.txt"))
+    return sorted(summary_files)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze chess simulation results.")
-    parser.add_argument("--results-dir", default="results",
-                        help="Path to the results/ directory (default: results)")
-    parser.add_argument("--output-dir", default="carc/results",
-                        help="Where to write CSV and report files (default: carc/results)")
+    parser.add_argument("--serial-sim-dir", default=None,
+                        help="Path to the serial sim output directory")
+    parser.add_argument("--openmp-sim-dir", default=None,
+                        help="Path to the OpenMP sim output directory")
+    parser.add_argument("--results-dir", default=None,
+                        help="Legacy: single results dir. Use --serial-sim-dir + --openmp-sim-dir instead.")
+    parser.add_argument("--csv-dir", default="results/csv",
+                        help="Where to write CSV files (default: results/csv)")
+    parser.add_argument("--analysis-dir", default="results/analysis",
+                        help="Where to write the report (default: results/analysis)")
+    parser.add_argument("--output-dir", default=None,
+                        help="Legacy alias for --csv-dir (also sets --analysis-dir)")
     parser.add_argument("--build-manifest", default=None,
                         help="Path to build_manifest.txt for provenance info")
+    parser.add_argument("--run-id", default="unknown",
+                        help="Run ID for provenance in the report")
     args = parser.parse_args()
 
-    results_dir = Path(args.results_dir)
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Handle legacy --output-dir
+    if args.output_dir is not None:
+        args.csv_dir = args.output_dir
+        args.analysis_dir = args.output_dir
 
-    if not results_dir.is_dir():
-        print(f"ERROR: results directory not found: {results_dir}", file=sys.stderr)
-        sys.exit(1)
+    csv_dir = Path(args.csv_dir)
+    analysis_dir = Path(args.analysis_dir)
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Discover and parse all summary.txt files ---
-    summary_files = sorted(results_dir.glob("**/summary.txt"))
+    summary_files = discover_results(args.serial_sim_dir, args.openmp_sim_dir, args.results_dir)
     if not summary_files:
-        print(f"ERROR: No summary.txt files found under {results_dir}", file=sys.stderr)
+        dirs = [d for d in [args.serial_sim_dir, args.openmp_sim_dir, args.results_dir] if d]
+        print(f"ERROR: No summary.txt files found under: {dirs}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Found {len(summary_files)} summary.txt file(s).")
@@ -241,7 +272,7 @@ def main() -> None:
         "any_capture_pct", "queen_capture_pct",
         "source",
     ]
-    write_csv(output_dir / "metrics_raw.csv", raw_fields, records)
+    write_csv(csv_dir / "metrics_raw.csv", raw_fields, records)
 
     # --- 2. speedup_table.csv — speedup + efficiency for each (size, threads) pair ---
     speedup_rows = []
@@ -270,7 +301,7 @@ def main() -> None:
                 "openmp_throughput": fmt(omp["throughput_games_s"]),
             })
 
-    write_csv(output_dir / "speedup_table.csv",
+    write_csv(csv_dir / "speedup_table.csv",
               ["size", "n_games", "threads", "serial_time_s", "openmp_time_s",
                "speedup", "efficiency_pct", "serial_throughput", "openmp_throughput"],
               speedup_rows)
@@ -299,7 +330,7 @@ def main() -> None:
             "amdahl_max_speedup": fmt(amdahl_max),
         })
 
-    write_csv(output_dir / "scaling_table.csv",
+    write_csv(csv_dir / "scaling_table.csv",
               ["threads", "execution_time_s", "throughput_games_s", "moves_per_sec",
                "speedup", "efficiency_pct", "estimated_serial_frac_pct", "amdahl_max_speedup"],
               scaling_rows)
@@ -334,7 +365,7 @@ def main() -> None:
             "amdahl_max_speedup": fmt(amdahl_max),
         })
 
-    write_csv(output_dir / "amdahl_table.csv",
+    write_csv(csv_dir / "amdahl_table.csv",
               ["size", "n_games", "measured_at_threads", "measured_speedup",
                "serial_frac_pct", "parallel_frac_pct", "amdahl_max_speedup"],
               amdahl_rows)
@@ -361,7 +392,7 @@ def main() -> None:
             "avg_length_plies": fmt(r["avg_length_plies"]),
         })
 
-    write_csv(output_dir / "statistical_accuracy.csv",
+    write_csv(csv_dir / "statistical_accuracy.csv",
               ["size", "variant", "threads", "n_games",
                "checkmate_pct", "labelle_baseline_pct", "delta_pct", "z_score",
                "draws_pct", "avg_length_plies"],
@@ -373,6 +404,8 @@ def main() -> None:
         mp = Path(args.build_manifest)
         if mp.exists():
             build_info = mp.read_text(encoding="utf-8").strip()
+
+    run_id_str = args.run_id
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -429,11 +462,12 @@ def main() -> None:
     report = f"""# Chess Monte Carlo Simulation: CARC HPC Results
 
 Generated: {now}
+Run ID: {run_id_str}
 
 ## Environment
 
 ```
-{build_info if build_info else "See carc/build_manifest.txt"}
+{build_info if build_info else "See scripts/build_manifest.txt"}
 ```
 
 ---
@@ -525,15 +559,15 @@ The simulation uses `#pragma omp for schedule(static)` in `openMP.cpp`.
 
 ---
 
-*Generated by `carc/analyze_results.py`*
+*Generated by `scripts/analyze_results.py`*
 """
 
-    report_path = output_dir / "report.md"
+    report_path = analysis_dir / "report.md"
     report_path.write_text(report, encoding="utf-8")
     print(f"  Written: {report_path}")
 
     print(f"\nDone. {len(records)} records analyzed.")
-    print(f"Open carc/results/report.md for the full summary.")
+    print(f"Open {report_path} for the full summary.")
 
 
 if __name__ == "__main__":

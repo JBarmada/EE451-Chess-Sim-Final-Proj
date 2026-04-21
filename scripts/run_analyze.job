@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=chess_analyze
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:15:00
+#SBATCH --output=scripts/logs/run_analyze.%j.out
+#SBATCH --error=scripts/logs/run_analyze.%j.err
+
+set -euo pipefail
+
+module purge
+module load python
+
+PROJ_DIR="${SLURM_SUBMIT_DIR}"
+cd "${PROJ_DIR}"
+
+SERIAL_SIM_DIR="results/cpu_serial/${RUN_ID}/sim"
+OPENMP_SIM_DIR="results/cpu_openmp/${RUN_ID}/sim"
+SERIAL_CSV_DIR="results/cpu_serial/${RUN_ID}/csv"
+SERIAL_ANALYSIS_DIR="results/cpu_serial/${RUN_ID}/analysis"
+
+python3 scripts/analyze_results.py \
+    --serial-sim-dir  "${SERIAL_SIM_DIR}" \
+    --openmp-sim-dir  "${OPENMP_SIM_DIR}" \
+    --csv-dir         "${SERIAL_CSV_DIR}" \
+    --analysis-dir    "${SERIAL_ANALYSIS_DIR}" \
+    --build-manifest  scripts/build_manifest.txt \
+    --run-id          "${RUN_ID}"
+
+echo "Analysis complete. Report: ${SERIAL_ANALYSIS_DIR}/report.md"

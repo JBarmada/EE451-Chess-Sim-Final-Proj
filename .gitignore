@@ -1,10 +1,24 @@
-# GeminiCoder chess simulator build artifacts
-code/chess-library/GeminiCoder/sim*
-code/chess-library/GeminiCoder/sanity_*
-code/chess-library/GeminiCoder/*.o
-code/chess-library/GeminiCoder/*.obj
-code/chess-library/GeminiCoder/*.out
-code/chess-library/GeminiCoder/*.exe
+# Compiled binaries (Linux — CARC)
+sim_serial_*
+sim_openmp_*
+sanity_serial
+sanity_openmp
 
-# Generated simulation outputs
-# code/chess-library/GeminiCoder/results/
+# Compiled binaries (Windows)
+*.exe
+
+# Build provenance (generated per machine)
+scripts/build_manifest.txt
+
+# SLURM logs
+scripts/logs/
+
+# results: track summary.txt and analysis outputs, not intermediate
+# (uncomment to fully exclude results from git)
+# results/
+
+# Old code/ directory if any remnants
+code/
+
+# Claude internal
+.claude/

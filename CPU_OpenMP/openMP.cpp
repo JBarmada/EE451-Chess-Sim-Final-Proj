@@ -255,7 +255,8 @@ int main() {
                    << (double)count / NUM_GAMES * 100 << "%\n";
 
     const std::string simSize = formatSimSize(NUM_GAMES);
-    const std::filesystem::path resultsDir = std::filesystem::path("results") /
+    const char* runDir = std::getenv("CHESS_RUN_DIR");
+    const std::filesystem::path resultsDir = std::filesystem::path(runDir ? runDir : "results") /
                                              (simSize + "_openmp") /
                                              std::to_string(numThreads);
     std::filesystem::create_directories(resultsDir);

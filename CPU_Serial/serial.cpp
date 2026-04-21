@@ -227,7 +227,8 @@ int main() {
     }
 
     const std::string simSize = formatSimSize(NUM_GAMES);
-    const std::filesystem::path resultsDir = std::filesystem::path("results") / (simSize + "_serial");
+    const char* runDir = std::getenv("CHESS_RUN_DIR");
+    const std::filesystem::path resultsDir = std::filesystem::path(runDir ? runDir : "results") / (simSize + "_serial");
     std::filesystem::create_directories(resultsDir);
     const std::filesystem::path outputFile = resultsDir / "summary.txt";
 

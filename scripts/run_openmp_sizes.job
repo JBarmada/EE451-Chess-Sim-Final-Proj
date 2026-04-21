@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=chess_omp_sizes
+#SBATCH --exclusive
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --time=00:30:00
+#SBATCH --output=scripts/logs/run_omp_sizes.%j.out
+#SBATCH --error=scripts/logs/run_omp_sizes.%j.err
+
+set -euo pipefail
+
+module purge
+module load gcc
+
+PROJ_DIR="${SLURM_SUBMIT_DIR}"
+cd "${PROJ_DIR}"
+
+RUN_BASE="results/cpu_openmp/${RUN_ID}"
+mkdir -p "${RUN_BASE}/sim" "${RUN_BASE}/csv" "${RUN_BASE}/analysis"
+
+# Hardware capture (same block as above)
+{
+    echo "=== Job Info ==="
+    echo "SLURM_JOB_ID: ${SLURM_JOB_ID}"
+    echo "SLURM_JOB_NODELIST: ${SLURM_JOB_NODELIST}"
+    echo "RUN_ID: ${RUN_ID}"
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo ""
+    echo "=== CPU ==="
+    lscpu
+    echo ""
+    echo "=== Memory ==="
+    free -h
+    echo ""
+    echo "=== NUMA Topology ==="
+    numactl --hardware 2>/dev/null || echo "numactl not available"
+    echo ""
+    echo "=== CPU Frequency ==="
+    cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null && echo "Hz (max)" || echo "N/A"
+    echo ""
+    echo "=== /proc/cpuinfo (first core) ==="
+    sed '/^$/q' /proc/cpuinfo
+    echo ""
+    echo "=== Compiler ==="
+    g++ --version
+    echo ""
+    echo "=== Loaded Modules ==="
+    module list 2>&1
+    echo ""
+    echo "=== SLURM Job Detail ==="
+    scontrol show job "${SLURM_JOB_ID}" 2>/dev/null || echo "N/A"
+    echo ""
+    echo "=== GPU ==="
+    nvidia-smi 2>/dev/null || echo "No GPU / nvidia-smi not available"
+} >> "${RUN_BASE}/sim/hardware.txt"   # append to same file as scaling job
+
+export CHESS_RUN_DIR="${RUN_BASE}/sim"
+export OMP_NUM_THREADS=32
+
+for size in 100k 1m 10m 100m; do
+    echo "--- [$(date -u +%H:%M:%S)] sim_openmp_${size} (32 threads) ---"
+    ./sim_openmp_${size}
+    echo ""
+done
+
+echo "OpenMP size runs complete. Results in ${RUN_BASE}/sim/"

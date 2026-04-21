@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 # build.sh — Compile all chess simulation binaries on CARC.
-# Run this from the GeminiCoder/ directory (or let it cd there automatically).
-# Usage: bash carc/build.sh
+# Run from the repo root (where Makefile lives).
+# Usage: bash scripts/build.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJ_DIR="${SCRIPT_DIR}/.."   # chess-library/GeminiCoder/
+PROJ_DIR="${SCRIPT_DIR}/.."   # repo root
 
-# --- Module load ---
 module purge
 module load gcc
 
 cd "${PROJ_DIR}"
 
-# --- Log build environment ---
-mkdir -p carc
+# Log build environment
+mkdir -p scripts/logs
 {
     echo "Build timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "Hostname: $(hostname)"
@@ -22,15 +21,14 @@ mkdir -p carc
     echo "Loaded modules: $(module list 2>&1 | tr '\n' ' ')"
     echo "CXXFLAGS: -std=c++17 -O3 -DNDEBUG"
     echo "OpenMP flags: -fopenmp"
-} > carc/build_manifest.txt
+} > scripts/build_manifest.txt
 
-echo "Build environment logged to carc/build_manifest.txt"
-cat carc/build_manifest.txt
+echo "Build environment logged to scripts/build_manifest.txt"
+cat scripts/build_manifest.txt
 echo ""
 
-# --- Build targets (skip 1b — wall time too long) ---
-SERIAL_TARGETS="sim100k_serial sim1m_serial sim10m_serial sim100m_serial"
-OPENMP_TARGETS="sim100k_openmp sim1m_openmp sim10m_openmp sim100m_openmp"
+SERIAL_TARGETS="sim_serial_100k sim_serial_1m sim_serial_10m sim_serial_100m"
+OPENMP_TARGETS="sim_openmp_100k sim_openmp_1m sim_openmp_10m sim_openmp_100m"
 
 echo "Building serial targets..."
 for target in ${SERIAL_TARGETS}; do
@@ -44,7 +42,6 @@ for target in ${OPENMP_TARGETS}; do
     make "${target}"
 done
 
-# --- Verify ---
 echo ""
 echo "Verifying binaries..."
 ALL_OK=true
@@ -60,9 +57,8 @@ done
 if [[ "${ALL_OK}" == "true" ]]; then
     echo ""
     echo "All 8 binaries built successfully."
-    echo "Next step: cd carc/ && bash submit_all.sh"
+    echo "Next step: bash scripts/submit_all.sh"
 else
-    echo ""
-    echo "ERROR: Some binaries are missing. Check make output above." >&2
+    echo "ERROR: Some binaries missing." >&2
     exit 1
 fi
