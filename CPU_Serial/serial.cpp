@@ -59,7 +59,7 @@ struct AggregateStats {
     int draws = 0;
     
     std::map<std::string, int> terminationCounts;
-    std::vector<int> gameLengths; // Store lengths to calculate distribution/variance
+    long long gameLengthSum = 0; // Running sum — O(1) memory instead of O(N) vector
     
     int gamesWithAnyCapture = 0;
     int gamesWithQueenCapture = 0;
@@ -147,7 +147,7 @@ GameAnalytics simulateRandomGame(std::mt19937& rng) {
 
 void aggregateGame(AggregateStats& agg, const GameAnalytics& game) {
     agg.totalGames++;
-    agg.gameLengths.push_back(game.totalPly);
+    agg.gameLengthSum += game.totalPly;
     agg.terminationCounts[game.terminationReason]++;
     
     // Updated Win/Loss Logic
@@ -196,7 +196,7 @@ int main() {
     report << "Draws: " << (double)globalStats.draws / NUM_GAMES * 100 << "%\n";
 
     // Output Game-Shape Metrics
-    double avgPly = std::accumulate(globalStats.gameLengths.begin(), globalStats.gameLengths.end(), 0.0) / NUM_GAMES;
+    double avgPly = static_cast<double>(globalStats.gameLengthSum) / NUM_GAMES;
     report << "\n--- GAME SHAPE ---" << std::endl;
     report << "Average Length: " << avgPly << " plies\n";
     for (const auto& [reason, count] : globalStats.terminationCounts) {

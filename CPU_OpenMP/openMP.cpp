@@ -60,7 +60,7 @@ struct AggregateStats {
     int draws = 0;
 
     std::map<std::string, int> terminationCounts;
-    std::vector<int> gameLengths;
+    long long gameLengthSum = 0; // Running sum — O(1) memory instead of O(N) vector
 
     int gamesWithAnyCapture = 0;
     int gamesWithQueenCapture = 0;
@@ -137,7 +137,7 @@ GameAnalytics simulateRandomGame(std::mt19937& rng) {
 
 void aggregateGame(AggregateStats& agg, const GameAnalytics& game) {
     agg.totalGames++;
-    agg.gameLengths.push_back(game.totalPly);
+    agg.gameLengthSum += game.totalPly;
     agg.terminationCounts[game.terminationReason]++;
 
     if (game.winner == "White") agg.whiteWins++;
@@ -159,8 +159,7 @@ void mergeStats(AggregateStats& dst, const AggregateStats& src) {
     dst.gamesWithAnyCapture  += src.gamesWithAnyCapture;
     dst.gamesWithQueenCapture+= src.gamesWithQueenCapture;
 
-    dst.gameLengths.insert(dst.gameLengths.end(),
-                           src.gameLengths.begin(), src.gameLengths.end());
+    dst.gameLengthSum += src.gameLengthSum;
 
     for (const auto& [k, v] : src.terminationCounts)
         dst.terminationCounts[k] += v;
@@ -180,8 +179,6 @@ int main() {
     for (auto& s : seeds) s = rd();
 
     AggregateStats globalStats;
-    // Reserve to avoid reallocations during the merge
-    globalStats.gameLengths.reserve(NUM_GAMES);
 
     std::cout << "Simulating " << NUM_GAMES << " games on "
               << numThreads << " threads...\n";
@@ -195,9 +192,6 @@ int main() {
         std::mt19937 rng(seeds[tid]);
 
         AggregateStats localStats;
-        // Give each thread a fair share; the schedule(static) below handles
-        // any remainder automatically.
-        localStats.gameLengths.reserve(NUM_GAMES / numThreads + 1);
 
         #pragma omp for schedule(static)
         for (int i = 0; i < NUM_GAMES; ++i) {
@@ -227,8 +221,7 @@ int main() {
         report << "Black Wins: " << (double)globalStats.blackWins / NUM_GAMES * 100 << "%\n";
         report << "Draws: "      << (double)globalStats.draws      / NUM_GAMES * 100 << "%\n";
 
-    double avgPly = std::accumulate(globalStats.gameLengths.begin(),
-                                    globalStats.gameLengths.end(), 0.0) / NUM_GAMES;
+    double avgPly = static_cast<double>(globalStats.gameLengthSum) / NUM_GAMES;
         report << "\n--- GAME SHAPE ---\n";
         report << "Average Length: " << avgPly << " plies\n";
     for (const auto& [reason, count] : globalStats.terminationCounts)
