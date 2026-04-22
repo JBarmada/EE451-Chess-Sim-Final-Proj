@@ -374,11 +374,15 @@ def main() -> None:
               speedup_rows)
 
     # ── 4. scaling_table.csv (thread sweep at fixed size) ─────────────────────
-    # Pick largest size that has both serial and all thread-count OpenMP runs
-    scaling_size = next(
-        (s for s in reversed(sizes)
-         if index.get((s, "serial", 1)) and any(index.get((s, "openmp", t)) for t in thread_counts)),
-        sizes[-1] if sizes else "10m"
+    # Pick the size with the most distinct thread-count OpenMP runs (i.e. the thread sweep);
+    # break ties by preferring larger sizes.
+    def thread_run_count(s):
+        return sum(1 for t in thread_counts if index.get((s, "openmp", t)))
+
+    scaling_size = max(
+        (s for s in sizes if index.get((s, "serial", 1)) and thread_run_count(s) > 0),
+        key=lambda s: (thread_run_count(s), size_sort_key(s)),
+        default=sizes[-1] if sizes else "10m",
     )
     serial_ref = index.get((scaling_size, "serial", 1))
 
@@ -672,10 +676,11 @@ Chess random simulation is **embarrassingly parallel** in the limit:
 - Thread-local RNG and statistics eliminate synchronisation inside the hot loop.
 - Only `mergeStats()` is serial — O(threads), ≪ 1% of total runtime.
 
-Observed serial fraction (typically 5–10%) is dominated by:
-1. OpenMP thread pool startup (amortised over large N)
-2. Memory bandwidth saturation on shared L3 at high thread counts
-3. NUMA remote-memory traffic when threads span multiple EPYC dies
+Observed serial fraction at large N is typically **< 0.1%**, driven by:
+1. OpenMP thread pool startup (amortised over large N — dominant at small N)
+2. `mergeStats()` reduction after all games complete (O(threads), constant time)
+3. Memory bandwidth saturation on shared L3 at high thread counts
+4. NUMA remote-memory traffic when threads span both EPYC dies (>32 threads on this node)
 
 ---
 
