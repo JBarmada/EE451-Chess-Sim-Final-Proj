@@ -1,0 +1,35 @@
+
+--- PERFORMANCE ---
+Execution Time: 9.95397 seconds
+Throughput: 1004624.35 games/sec
+
+--- CORE OUTCOMES ---
+White Wins: 7.64%
+Black Wins: 7.66%
+Draws: 84.70%
+
+--- GAME SHAPE ---
+Average Length: 400.82 plies
+CHECKMATE: 15.30%
+FIFTY_MOVES: 66.34%
+STALEMATE: 6.28%
+THREEFOLD_REPETITION: 12.07%
+
+--- EVENT STATISTICS ---
+Games with ANY capture: 99.87%
+Games with a Queen capture: 97.87%
+
+First Captured Piece Distribution:
+None: 71.73%
+Pawn: 12.54%
+Knight: 8.54%
+Bishop: 1.78%
+Rook: 5.29%
+
+Checkmating Piece Distribution:
+None: 1.67%
+Pawn: 0.85%
+Knight: 1.04%
+Bishop: 4.48%
+Rook: 7.23%
+Queen: 0.03%
