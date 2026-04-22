@@ -40,11 +40,11 @@ HW_FILE="${RUN_BASE}/sim/hardware.txt"
 if [[ -f "${HW_FILE}" ]]; then
     echo "" >> "${HW_FILE}"
     echo "========== SIZES JOB (appended) ==========" >> "${HW_FILE}"
-    bash scripts/capture_hardware.sh /tmp/hw_sizes_$$.txt
-    cat /tmp/hw_sizes_$$.txt >> "${HW_FILE}"
+    bash scripts/capture_hardware.sh /tmp/hw_sizes_$$.txt || echo "WARN: hardware capture failed (non-fatal)" >&2
+    cat /tmp/hw_sizes_$$.txt >> "${HW_FILE}" 2>/dev/null || true
     rm -f /tmp/hw_sizes_$$.txt
 else
-    bash scripts/capture_hardware.sh "${HW_FILE}"
+    bash scripts/capture_hardware.sh "${HW_FILE}" || echo "WARN: hardware capture failed (non-fatal)" >&2
 fi
 
 export CHESS_RUN_DIR="${RUN_BASE}/sim"

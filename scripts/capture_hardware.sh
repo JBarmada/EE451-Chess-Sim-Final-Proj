@@ -6,7 +6,7 @@
 #   CPU model, core/thread counts, frequency, cache hierarchy, memory, NUMA,
 #   SLURM allocation, compiler, OpenMP version, GPU (if present).
 
-set -euo pipefail
+set -uo pipefail  # no -e: hardware capture is informational; a failed query must not kill the job
 
 OUTPUT="${1:?Usage: capture_hardware.sh <output_file>}"
 mkdir -p "$(dirname "${OUTPUT}")"

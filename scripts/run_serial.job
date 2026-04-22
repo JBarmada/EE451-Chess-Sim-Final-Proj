@@ -27,7 +27,7 @@ echo "Node:    $(hostname)"
 echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
-bash scripts/capture_hardware.sh "${RUN_BASE}/sim/hardware.txt"
+bash scripts/capture_hardware.sh "${RUN_BASE}/sim/hardware.txt" || echo "WARN: hardware capture failed (non-fatal)" >&2
 
 export CHESS_RUN_DIR="${RUN_BASE}/sim"
 
