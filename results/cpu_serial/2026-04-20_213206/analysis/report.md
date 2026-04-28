@@ -1,7 +1,7 @@
 # Chess Monte Carlo Simulation — HPC Results
 
 **Run ID:** `2026-04-20_213206`
-**Generated:** 2026-04-28T05:19:58Z
+**Generated:** 2026-04-28T05:27:04Z
 
 ---
 
@@ -86,19 +86,20 @@ Speedup baseline: **serial** (1-thread time for this size).
 | Threads | Time (s) | Games/sec  | Speedup | Efficiency (%) | Serial Frac (%) | Amdahl Max | Amdahl Predicted |
 |---------|----------|------------|---------|----------------|-----------------|------------|------------------|
 | 1       | 644.20   | 15523.02   | 0.97    | 96.69          | N/A             | N/A        | 1.00             |
-| 2       | 323.10   | 30950.43   | 1.93    | 96.39          | 3.74            | 26.72      | 2.00             |
-| 4       | 160.66   | 62241.84   | 3.88    | 96.92          | 1.06            | 94.50      | 4.00             |
-| 8       | 80.77    | 123803.91  | 7.71    | 96.39          | 0.53            | 187.12     | 7.98             |
-| 16      | 40.18    | 248875.91  | 15.50   | 96.89          | 0.21            | 466.95     | 15.91            |
-| 32      | 20.01    | 499827.32  | 31.13   | 97.29          | 0.09            | 1113.65    | 31.65            |
-| 64      | 9.95     | 1004624.35 | 62.58   | 97.78          | 0.04            | 2768.93    | 62.58            |
+| 2       | 323.10   | 30950.43   | 1.93    | 96.39          | 3.74            | 26.72      | 1.98             |
+| 4       | 160.66   | 62241.84   | 3.88    | 96.92          | 1.06            | 94.50      | 3.89             |
+| 8       | 80.77    | 123803.91  | 7.71    | 96.39          | 0.53            | 187.12     | 7.50             |
+| 16      | 40.18    | 248875.91  | 15.50   | 96.89          | 0.21            | 466.95     | 14.01            |
+| 32      | 20.01    | 499827.32  | 31.13   | 97.29          | 0.09            | 1113.65    | 24.74            |
+| 64      | 9.95     | 1004624.35 | 62.58   | 97.78          | 0.04            | 2768.93    | 40.10            |
 
-**Amdahl's Law** — estimated serial fraction from highest thread-count measurement:
-`s ≈ 0.04%`  →  theoretical max speedup ≈ `2768.93×`
+**Amdahl's Law** — `s` estimated as the mean serial fraction across all multi-thread measurements:
+`s ≈ 0.95%`  →  theoretical max speedup ≈ `105.72×`
 
 The _Amdahl Predicted_ column shows what Amdahl's Law forecasts at each thread count
-given the estimated `s`. Gaps between predicted and actual reveal super-linear effects
-(cache warming) or sub-linear effects (memory bandwidth, NUMA overhead).
+given the averaged `s`. Because `s` is averaged across all rows rather than taken from
+any single point, no row trivially predicts itself — gaps between predicted and actual
+reflect real overhead (thread startup, NUMA traffic, memory bandwidth) that Amdahl does not model.
 
 ---
 

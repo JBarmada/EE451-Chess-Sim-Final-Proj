@@ -391,14 +391,23 @@ def main() -> None:
                   or index.get((scaling_size, "openmp", 1)))
     serial_ref_label = "serial" if index.get((scaling_size, "serial", 1)) else "1-thread OpenMP"
 
-    # Estimate serial fraction from the highest thread-count point for Amdahl predictions
-    best_t = max((t for t in thread_counts if index.get((scaling_size, "openmp", t))), default=None)
-    s_frac_est = None
-    if serial_ref and best_t and best_t > 1:
-        best_omp = index.get((scaling_size, "openmp", best_t))
-        if best_omp:
-            sp = serial_ref["execution_time_s"] / best_omp["execution_time_s"]
-            s_frac_est = amdahl_serial_frac(sp, best_t)
+    # Estimate serial fraction as the mean across all multi-thread measurements.
+    # Using a single point (e.g. highest thread count) is circular: s estimated
+    # from T threads trivially predicts the speedup at T threads perfectly.
+    # Averaging over all points means no single row is privileged and the
+    # Amdahl Predicted column is a genuine forecast for every row.
+    s_frac_samples = []
+    if serial_ref:
+        for t in thread_counts:
+            if t <= 1:
+                continue
+            omp_t = index.get((scaling_size, "openmp", t))
+            if omp_t:
+                sp = serial_ref["execution_time_s"] / omp_t["execution_time_s"]
+                sf = amdahl_serial_frac(sp, t)
+                if sf is not None:
+                    s_frac_samples.append(sf)
+    s_frac_est = sum(s_frac_samples) / len(s_frac_samples) if s_frac_samples else None
 
     scaling_rows: list[dict] = []
     for t in thread_counts:
@@ -652,12 +661,13 @@ Speedup baseline: **{serial_ref_label}** (1-thread time for this size).
 
 {md_table(scl_hdr, scl_md)}
 
-**Amdahl's Law** — estimated serial fraction from highest thread-count measurement:
+**Amdahl's Law** — `s` estimated as the mean serial fraction across all multi-thread measurements:
 `s ≈ {fmt(s_frac_est * 100) if s_frac_est else "N/A"}%`  →  theoretical max speedup ≈ `{fmt(1/s_frac_est) if s_frac_est else "N/A"}×`
 
 The _Amdahl Predicted_ column shows what Amdahl's Law forecasts at each thread count
-given the estimated `s`. Gaps between predicted and actual reveal super-linear effects
-(cache warming) or sub-linear effects (memory bandwidth, NUMA overhead).
+given the averaged `s`. Because `s` is averaged across all rows rather than taken from
+any single point, no row trivially predicts itself — gaps between predicted and actual
+reflect real overhead (thread startup, NUMA traffic, memory bandwidth) that Amdahl does not model.
 
 ---
 
