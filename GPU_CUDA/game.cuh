@@ -153,17 +153,19 @@ __host__ __device__ void make_move(BoardState& board, Move move) {
 // === Legal Move Generation ===
 
 /**
- * Generate all legal moves for the side to move.
+ * Legacy legality filter: copy-make per pseudo-legal move.
  *
- * Generates pseudo-legal moves, then filters out any that leave the king in check.
- * Also filters castling moves where the king is in check or passes through check.
+ * For each candidate move, apply it to a board copy and ask "is my king attacked
+ * now?". Costs an O(N) board copy and N attack scans per ply. Kept as a reference
+ * implementation alongside generate_legal_moves_fast.
  */
-__host__ __device__ void generate_legal_moves(const BoardState& board, MoveList& legal) {
+template<bool UseKoggeStone = false>
+__host__ __device__ void generate_legal_moves_legacy(const BoardState& board, MoveList& legal) {
     Color us = board.side_to_move;
     Color them = (us == WHITE) ? BLACK : WHITE;
 
     MoveList pseudo;
-    generate_all_pseudo_legal_moves(board, pseudo);
+    generate_all_pseudo_legal_moves<UseKoggeStone>(board, pseudo);
 
     legal.count = 0;
     for (int i = 0; i < pseudo.count; i++) {
@@ -177,12 +179,12 @@ __host__ __device__ void generate_legal_moves(const BoardState& board, MoveList&
         // We check conditions 1 and 2 here and let the general filter catch condition 3.
         if (move.flag == KINGSIDE_CASTLE || move.flag == QUEENSIDE_CASTLE) {
             int king_square = (us == WHITE) ? E1 : E8;
-            if (is_square_attacked(board, king_square, them)) continue;
+            if (is_square_attacked<UseKoggeStone>(board, king_square, them)) continue;
 
             int pass_through = (move.flag == KINGSIDE_CASTLE)
                 ? ((us == WHITE) ? F1 : F8)
                 : ((us == WHITE) ? D1 : D8);
-            if (is_square_attacked(board, pass_through, them)) continue;
+            if (is_square_attacked<UseKoggeStone>(board, pass_through, them)) continue;
         }
 
         // Copy-make: apply the move to a copy, then check if our king is safe
@@ -194,10 +196,110 @@ __host__ __device__ void generate_legal_moves(const BoardState& board, MoveList&
         // the OPPONENT (now the side to move) attacks it.
         int king_square = lsb(after.pieces[us][KING]);
 
-        if (!is_square_attacked(after, king_square, them)) {
+        if (!is_square_attacked<UseKoggeStone>(after, king_square, them)) {
             legal.moves[legal.count] = move;
             legal.count++;
         }
+    }
+}
+
+/**
+ * Fast legality filter using precomputed pin and check masks.
+ *
+ * Computes four pieces of information once per position (checkers, check_mask,
+ * pin_rays, enemy_attacks) and then resolves each pseudo-legal move with a few
+ * bitwise ops:
+ *   - King moves: legal iff destination not in enemy_attacks (plus path checks for castling).
+ *   - Non-king moves under double check: never legal.
+ *   - Other non-king moves: legal iff destination ∈ check_mask, refined to the pin
+ *     ray when the from-square is pinned.
+ *
+ * NOTE: [edge case callout] En passant has a subtle horizontal-pin scenario where
+ * removing two pawns from the same rank simultaneously exposes the king to a sideways
+ * slider. The mask logic doesn't catch this case (it considers only the moving piece's
+ * pin status, not interactions between source and captured square). EP is rare, so we
+ * fall back to copy-make verification just for those moves.
+ */
+template<bool UseKoggeStone = false>
+__host__ __device__ void generate_legal_moves_fast(const BoardState& board, MoveList& legal) {
+    Color us = board.side_to_move;
+    Color them = (us == WHITE) ? BLACK : WHITE;
+    int king_sq = lsb(board.pieces[us][KING]);
+
+    uint64_t checkers      = compute_checkers<UseKoggeStone>(board, king_sq, them);
+    uint64_t check_mask    = compute_check_mask(board, king_sq, checkers, them);
+    uint64_t enemy_attacks = compute_enemy_attacks<UseKoggeStone>(board, king_sq, them);
+
+    // NOTE: [thought process] Most squares aren't pinned, so most pin_rays entries stay
+    // 0. We initialize the whole array to 0 once and only the pinned squares get
+    // overwritten by compute_pin_rays. The check `pinned & (1ULL << from)` decides
+    // whether to apply the per-square ray.
+    uint64_t pin_rays[64] = {};
+    uint64_t pinned = compute_pin_rays(board, king_sq, us, pin_rays);
+
+    bool in_double_check = (check_mask == 0);
+
+    MoveList pseudo;
+    generate_all_pseudo_legal_moves<UseKoggeStone>(board, pseudo);
+
+    legal.count = 0;
+    for (int i = 0; i < pseudo.count; i++) {
+        Move move = pseudo.moves[i];
+        uint64_t to_bb = 1ULL << move.to;
+
+        if (move.from == king_sq) {
+            // Castling: rights and clear path were verified in generate_castling_moves.
+            // We additionally need the king not currently in check, and the
+            // pass-through square not attacked. The destination square attack check
+            // falls through to the general king filter below.
+            if (move.flag == KINGSIDE_CASTLE || move.flag == QUEENSIDE_CASTLE) {
+                if (checkers != 0) continue;
+                int pass_through = (move.flag == KINGSIDE_CASTLE)
+                    ? ((us == WHITE) ? F1 : F8)
+                    : ((us == WHITE) ? D1 : D8);
+                if (enemy_attacks & (1ULL << pass_through)) continue;
+            }
+            if (enemy_attacks & to_bb) continue;
+            legal.moves[legal.count++] = move;
+            continue;
+        }
+
+        // Non-king moves are illegal under double check
+        if (in_double_check) continue;
+
+        // En passant edge case: rare, fall back to copy-make verification
+        if (move.flag == EN_PASSANT) {
+            BoardState after = board;
+            make_move(after, move);
+            int new_king_sq = lsb(after.pieces[us][KING]);
+            if (!is_square_attacked<UseKoggeStone>(after, new_king_sq, them)) {
+                legal.moves[legal.count++] = move;
+            }
+            continue;
+        }
+
+        uint64_t allowed = check_mask;
+        if (pinned & (1ULL << move.from)) {
+            allowed &= pin_rays[move.from];
+        }
+        if (to_bb & allowed) {
+            legal.moves[legal.count++] = move;
+        }
+    }
+}
+
+/**
+ * Generate all legal moves for the side to move, dispatching at compile time between
+ * the legacy copy-make filter and the fast pin/check-mask filter.
+ *
+ * Default is legacy so existing host tests need no changes.
+ */
+template<bool UseKoggeStone = false, bool UseFastLegality = false>
+__host__ __device__ void generate_legal_moves(const BoardState& board, MoveList& legal) {
+    if constexpr (UseFastLegality) {
+        generate_legal_moves_fast<UseKoggeStone>(board, legal);
+    } else {
+        generate_legal_moves_legacy<UseKoggeStone>(board, legal);
     }
 }
 
@@ -220,6 +322,7 @@ enum GameResult : int {
  * Call this after generating legal moves. If there are no legal moves, it's either
  * checkmate or stalemate depending on whether the king is in check.
  */
+template<bool UseKoggeStone = false>
 __host__ __device__ GameResult check_game_over(const BoardState& board,
                                                const MoveList& legal_moves) {
     // 50-move rule: 100 half-moves = 50 full moves without a pawn push or capture
@@ -234,7 +337,7 @@ __host__ __device__ GameResult check_game_over(const BoardState& board,
     // Find king square
     int king_square = lsb(board.pieces[us][KING]);
 
-    if (is_square_attacked(board, king_square, them)) {
+    if (is_square_attacked<UseKoggeStone>(board, king_square, them)) {
         // In check with no legal moves = checkmate
         return (us == WHITE) ? BLACK_WINS : WHITE_WINS;
     }

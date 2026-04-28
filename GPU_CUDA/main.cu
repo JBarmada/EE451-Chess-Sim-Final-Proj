@@ -19,6 +19,7 @@
 #include "game.cuh"
 #include "recording.cuh"
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <curand_kernel.h>
 
@@ -32,6 +33,7 @@
  * generator. The thread then runs an independent game loop: generate legal moves, pick
  * one at random, make the move, check for game over.
  */
+template<bool UseKoggeStone, bool UseFastLegality>
 __global__ void play_random_games(GameStats*    results,
                                   RecordedGame* recorded,
                                   int           num_games,
@@ -53,12 +55,13 @@ __global__ void play_random_games(GameStats*    results,
     initialize_board(board);
 
     int move_count = 0;
+    bool record_this_game = (global_id < num_recorded);
 
     while (move_count < MAX_GAME_LENGTH) {
         MoveList legal;
-        generate_legal_moves(board, legal);
+        generate_legal_moves<UseKoggeStone, UseFastLegality>(board, legal);
 
-        GameResult result = check_game_over(board, legal);
+        GameResult result = check_game_over<UseKoggeStone>(board, legal);
         if (result != ONGOING) {
             results[global_id] = {result, (uint16_t)move_count};
             if (record_this_game) {
@@ -142,15 +145,35 @@ void report_statistics(const GameStats* results, int num_games, float elapsed_ms
 // === Main ===
 
 int main(int argc, char** argv) {
+    // === Parse CLI args ===
+    // NOTE: [thought process] Two flags select the sliding-attack implementation:
+    //   --naive        — walk one square at a time per ray (default).
+    //   --kogge-stone  — fixed-length parallel-prefix fill, no warp divergence.
+    // Any other argument is interpreted as the game count for backward compatibility
+    // with the original positional usage. Flags can appear in any order.
     int num_games = 10000;
-    if (argc > 1) {
-        num_games = atoi(argv[1]);
+    bool use_kogge_stone = false;
+    bool use_fast_legality = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--naive") == 0) {
+            use_kogge_stone = false;
+        } else if (strcmp(argv[i], "--kogge-stone") == 0) {
+            use_kogge_stone = true;
+        } else if (strcmp(argv[i], "--legacy-legality") == 0) {
+            use_fast_legality = false;
+        } else if (strcmp(argv[i], "--fast-legality") == 0) {
+            use_fast_legality = true;
+        } else {
+            num_games = atoi(argv[i]);
+        }
     }
 
     // Don't try to record more games than we're playing
     int num_recorded = (NUM_RECORDED_GAMES < num_games) ? NUM_RECORDED_GAMES : num_games;
 
     printf("Random Chess GPU Simulator\n");
+    printf("Sliding attacks: %s\n", use_kogge_stone ? "Kogge-Stone" : "naive");
+    printf("Legality filter: %s\n", use_fast_legality ? "fast (pin/check masks)" : "legacy (copy-make)");
     printf("Playing %d games, recording first %d for PGN output...\n\n",
            num_games, num_recorded);
 
@@ -178,8 +201,23 @@ int main(int argc, char** argv) {
     unsigned long long seed = time(nullptr);
 
     cudaEventRecord(start);
-    play_random_games<<<num_blocks, threads_per_block>>>(
-        d_results, d_recorded, num_games, num_recorded, seed);
+    // NOTE: [pedagogical] The kernel is templated on two independent boolean knobs:
+    // sliding-attack variant and legality-filter variant. The 4-way dispatch picks the
+    // matching specialization at launch — all four versions are compiled into the
+    // binary, but each launch picks one with zero runtime branching cost.
+    if (use_kogge_stone && use_fast_legality) {
+        play_random_games<true,  true ><<<num_blocks, threads_per_block>>>(
+            d_results, d_recorded, num_games, num_recorded, seed);
+    } else if (use_kogge_stone) {
+        play_random_games<true,  false><<<num_blocks, threads_per_block>>>(
+            d_results, d_recorded, num_games, num_recorded, seed);
+    } else if (use_fast_legality) {
+        play_random_games<false, true ><<<num_blocks, threads_per_block>>>(
+            d_results, d_recorded, num_games, num_recorded, seed);
+    } else {
+        play_random_games<false, false><<<num_blocks, threads_per_block>>>(
+            d_results, d_recorded, num_games, num_recorded, seed);
+    }
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
 

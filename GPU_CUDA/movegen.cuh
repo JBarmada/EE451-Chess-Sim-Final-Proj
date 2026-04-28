@@ -451,13 +451,184 @@ __host__ __device__ inline uint64_t ray_attacks(int square, int direction,
  *
  * Bishops use directions 4-7 (diagonals), rooks use 0-3 (orthogonals), queens use all 8.
  */
-__host__ __device__ inline uint64_t sliding_attacks(int square, uint64_t all_occupied,
-                                                    int start_dir, int end_dir) {
+__host__ __device__ inline uint64_t sliding_attacks_naive(int square, uint64_t all_occupied,
+                                                          int start_dir, int end_dir) {
     uint64_t attacks = 0;
     for (int dir = start_dir; dir < end_dir; dir++) {
         attacks |= ray_attacks(square, dir, all_occupied);
     }
     return attacks;
+}
+
+// === Kogge-Stone Sliding Attacks ===
+// NOTE: [pedagogical] Kogge-Stone is a parallel-prefix (scan) algorithm originally from
+// digital adders. Applied to chess, it computes a "fill" — every square reachable from
+// a starting bitboard along a fixed direction, stopping at blockers — using a fixed
+// sequence of 5 shift/AND/OR steps regardless of how far the fill propagates. The trick
+// is doubling: step 1 fills one square, step 2 fills two more, step 3 fills four more,
+// and so on (1 + 2 + 4 + 8 + 16 = 31 squares max — more than enough for a chess board).
+//
+// The variables:
+//   gen  = "generator" — squares filled so far (starts with the source piece).
+//   prop = "propagator" — empty squares we are allowed to fill into.
+//
+// At each step: any square in prop that is one shift away from gen joins gen. Then we
+// double the reach by shifting both by twice the previous distance.
+//
+// To get the attack set (rather than just the fill), we shift gen once more in the
+// direction. That final shift lands on either the last empty square plus the first
+// blocker (a capture target) — exactly what we want.
+//
+// NOTE: [performance improvement] Kogge-Stone shines even more when filling from many
+// source pieces at once (e.g., "all squares attacked by my rooks combined"). We don't
+// do that here because move generation needs to attribute each destination back to the
+// source piece, so we still loop over pieces and fill from a single bit at a time. Our
+// win is purely warp-divergence reduction: every thread executes the same fixed-length
+// instruction sequence regardless of where blockers sit on its board.
+//
+// NOTE: [pedagogical] File masks prevent the bitboard's row wraparound. Shifting east
+// (<<1, <<9, >>7) can move a bit from h-file onto a-file of an adjacent rank — a
+// non-move that would corrupt the attack set. We pre-mask the propagator with the
+// "destination forbidden" file so wraparound bits get ANDed away before they pollute
+// gen. The final "shift one more" also gets the same mask applied.
+
+/**
+ * Compute the attack bitboard for a single direction using a Kogge-Stone fill.
+ *
+ * The `shift` template parameter is the bit shift for one step in the direction
+ * (positive = left shift, negative = right shift, expressed via the helper inline).
+ * The `dest_mask` is the file mask that prevents wraparound on each step.
+ */
+__host__ __device__ inline uint64_t ks_north(uint64_t piece, uint64_t empty) {
+    uint64_t gen = piece;
+    gen   |= empty & (gen   << 8);
+    empty &=          (empty << 8);
+    gen   |= empty & (gen   << 16);
+    empty &=          (empty << 16);
+    gen   |= empty & (gen   << 32);
+    return gen << 8;
+}
+
+__host__ __device__ inline uint64_t ks_south(uint64_t piece, uint64_t empty) {
+    uint64_t gen = piece;
+    gen   |= empty & (gen   >> 8);
+    empty &=          (empty >> 8);
+    gen   |= empty & (gen   >> 16);
+    empty &=          (empty >> 16);
+    gen   |= empty & (gen   >> 32);
+    return gen >> 8;
+}
+
+__host__ __device__ inline uint64_t ks_east(uint64_t piece, uint64_t empty) {
+    // NOTE: [pedagogical] Pre-masking empty with ~FILE_A means any east-shifted bit
+    // landing on the a-file gets dropped at every step. The bit that would wrap from
+    // h-file to a-file of the next rank is filtered out before it ever enters gen.
+    uint64_t prop = empty & ~FILE_A;
+    uint64_t gen  = piece;
+    gen  |= prop & (gen  << 1);
+    prop &=        (prop << 1);
+    gen  |= prop & (gen  << 2);
+    prop &=        (prop << 2);
+    gen  |= prop & (gen  << 4);
+    return (gen << 1) & ~FILE_A;
+}
+
+__host__ __device__ inline uint64_t ks_west(uint64_t piece, uint64_t empty) {
+    uint64_t prop = empty & ~FILE_H;
+    uint64_t gen  = piece;
+    gen  |= prop & (gen  >> 1);
+    prop &=        (prop >> 1);
+    gen  |= prop & (gen  >> 2);
+    prop &=        (prop >> 2);
+    gen  |= prop & (gen  >> 4);
+    return (gen >> 1) & ~FILE_H;
+}
+
+__host__ __device__ inline uint64_t ks_northeast(uint64_t piece, uint64_t empty) {
+    uint64_t prop = empty & ~FILE_A;
+    uint64_t gen  = piece;
+    gen  |= prop & (gen  << 9);
+    prop &=        (prop << 9);
+    gen  |= prop & (gen  << 18);
+    prop &=        (prop << 18);
+    gen  |= prop & (gen  << 36);
+    return (gen << 9) & ~FILE_A;
+}
+
+__host__ __device__ inline uint64_t ks_northwest(uint64_t piece, uint64_t empty) {
+    uint64_t prop = empty & ~FILE_H;
+    uint64_t gen  = piece;
+    gen  |= prop & (gen  << 7);
+    prop &=        (prop << 7);
+    gen  |= prop & (gen  << 14);
+    prop &=        (prop << 14);
+    gen  |= prop & (gen  << 28);
+    return (gen << 7) & ~FILE_H;
+}
+
+__host__ __device__ inline uint64_t ks_southeast(uint64_t piece, uint64_t empty) {
+    uint64_t prop = empty & ~FILE_A;
+    uint64_t gen  = piece;
+    gen  |= prop & (gen  >> 7);
+    prop &=        (prop >> 7);
+    gen  |= prop & (gen  >> 14);
+    prop &=        (prop >> 14);
+    gen  |= prop & (gen  >> 28);
+    return (gen >> 7) & ~FILE_A;
+}
+
+__host__ __device__ inline uint64_t ks_southwest(uint64_t piece, uint64_t empty) {
+    uint64_t prop = empty & ~FILE_H;
+    uint64_t gen  = piece;
+    gen  |= prop & (gen  >> 9);
+    prop &=        (prop >> 9);
+    gen  |= prop & (gen  >> 18);
+    prop &=        (prop >> 18);
+    gen  |= prop & (gen  >> 36);
+    return (gen >> 9) & ~FILE_H;
+}
+
+/**
+ * Compute the combined attack bitboard for a sliding piece using Kogge-Stone fills.
+ *
+ * Same signature as sliding_attacks_naive. Direction range matches the ray_attacks
+ * encoding: 0-3 = orthogonal (rook), 4-7 = diagonal (bishop), 0-7 = all (queen).
+ */
+__host__ __device__ inline uint64_t sliding_attacks_kogge_stone(int square,
+                                                                uint64_t all_occupied,
+                                                                int start_dir, int end_dir) {
+    uint64_t piece = 1ULL << square;
+    uint64_t empty = ~all_occupied;
+    uint64_t attacks = 0;
+
+    // NOTE: [thought process] We branch on direction range to match the naive function's
+    // selective dispatch. The compiler can fold these branches when start/end_dir are
+    // compile-time constants (which they are at every call site). Even when not folded,
+    // the branches are uniform across a warp because all threads call with the same
+    // (start_dir, end_dir) pair, so there is no warp divergence.
+    if (start_dir <= 0 && 0 < end_dir) attacks |= ks_north    (piece, empty);
+    if (start_dir <= 1 && 1 < end_dir) attacks |= ks_south    (piece, empty);
+    if (start_dir <= 2 && 2 < end_dir) attacks |= ks_west     (piece, empty);
+    if (start_dir <= 3 && 3 < end_dir) attacks |= ks_east     (piece, empty);
+    if (start_dir <= 4 && 4 < end_dir) attacks |= ks_northwest(piece, empty);
+    if (start_dir <= 5 && 5 < end_dir) attacks |= ks_northeast(piece, empty);
+    if (start_dir <= 6 && 6 < end_dir) attacks |= ks_southwest(piece, empty);
+    if (start_dir <= 7 && 7 < end_dir) attacks |= ks_southeast(piece, empty);
+    return attacks;
+}
+
+/**
+ * Compute sliding attacks, dispatching at compile time between the naive walker and
+ * Kogge-Stone fill. Default is naive so existing host-side tests need no changes.
+ */
+template<bool UseKoggeStone = false>
+__host__ __device__ inline uint64_t sliding_attacks(int square, uint64_t all_occupied,
+                                                    int start_dir, int end_dir) {
+    if constexpr (UseKoggeStone) {
+        return sliding_attacks_kogge_stone(square, all_occupied, start_dir, end_dir);
+    } else {
+        return sliding_attacks_naive(square, all_occupied, start_dir, end_dir);
+    }
 }
 
 // === Bishop Moves ===
@@ -468,6 +639,7 @@ __host__ __device__ inline uint64_t sliding_attacks(int square, uint64_t all_occ
  * Bishops slide along the 4 diagonal directions (NW, NE, SW, SE), which are ray
  * directions 4-7 in our encoding.
  */
+template<bool UseKoggeStone = false>
 __host__ __device__ void generate_bishop_moves(const BoardState& board, MoveList& list) {
     Color us = board.side_to_move;
     uint64_t our_bishops = board.pieces[us][BISHOP];
@@ -476,7 +648,7 @@ __host__ __device__ void generate_bishop_moves(const BoardState& board, MoveList
 
     while (our_bishops) {
         int from = pop_lsb(our_bishops);
-        uint64_t targets = sliding_attacks(from, board.all_occupied, 4, 8) & ~friendly;
+        uint64_t targets = sliding_attacks<UseKoggeStone>(from, board.all_occupied, 4, 8) & ~friendly;
 
         while (targets) {
             int to = pop_lsb(targets);
@@ -494,6 +666,7 @@ __host__ __device__ void generate_bishop_moves(const BoardState& board, MoveList
  * Rooks slide along the 4 orthogonal directions (N, S, W, E), which are ray
  * directions 0-3 in our encoding.
  */
+template<bool UseKoggeStone = false>
 __host__ __device__ void generate_rook_moves(const BoardState& board, MoveList& list) {
     Color us = board.side_to_move;
     uint64_t our_rooks = board.pieces[us][ROOK];
@@ -502,7 +675,7 @@ __host__ __device__ void generate_rook_moves(const BoardState& board, MoveList& 
 
     while (our_rooks) {
         int from = pop_lsb(our_rooks);
-        uint64_t targets = sliding_attacks(from, board.all_occupied, 0, 4) & ~friendly;
+        uint64_t targets = sliding_attacks<UseKoggeStone>(from, board.all_occupied, 0, 4) & ~friendly;
 
         while (targets) {
             int to = pop_lsb(targets);
@@ -520,6 +693,7 @@ __host__ __device__ void generate_rook_moves(const BoardState& board, MoveList& 
  * The queen combines the movement of a bishop and a rook: it slides along all 8 ray
  * directions (4 orthogonal + 4 diagonal), which is directions 0-7 in our encoding.
  */
+template<bool UseKoggeStone = false>
 __host__ __device__ void generate_queen_moves(const BoardState& board, MoveList& list) {
     Color us = board.side_to_move;
     uint64_t our_queens = board.pieces[us][QUEEN];
@@ -531,7 +705,7 @@ __host__ __device__ void generate_queen_moves(const BoardState& board, MoveList&
         // NOTE: [pedagogical] The queen's attack set is exactly the union of bishop attacks
         // (directions 4-7) and rook attacks (directions 0-3). Using sliding_attacks with
         // range 0-8 computes all 8 directions in one call.
-        uint64_t targets = sliding_attacks(from, board.all_occupied, 0, 8) & ~friendly;
+        uint64_t targets = sliding_attacks<UseKoggeStone>(from, board.all_occupied, 0, 8) & ~friendly;
 
         while (targets) {
             int to = pop_lsb(targets);
@@ -600,14 +774,15 @@ __host__ __device__ void generate_castling_moves(const BoardState& board, MoveLi
  * Calls every piece-specific generator and collects the results into a single MoveList.
  * These moves may leave the king in check — use generate_legal_moves for filtered results.
  */
+template<bool UseKoggeStone = false>
 __host__ __device__ void generate_all_pseudo_legal_moves(const BoardState& board,
                                                          MoveList& list) {
     list.count = 0;
     generate_pawn_moves(board, list);
     generate_knight_moves(board, list);
-    generate_bishop_moves(board, list);
-    generate_rook_moves(board, list);
-    generate_queen_moves(board, list);
+    generate_bishop_moves<UseKoggeStone>(board, list);
+    generate_rook_moves<UseKoggeStone>(board, list);
+    generate_queen_moves<UseKoggeStone>(board, list);
     generate_king_moves(board, list);
     generate_castling_moves(board, list);
 }
@@ -621,6 +796,7 @@ __host__ __device__ void generate_all_pseudo_legal_moves(const BoardState& board
  * by asking: "if a piece of type X were on the target square, could it capture an
  * enemy piece of the same type?" This reversal trick avoids generating all enemy moves.
  */
+template<bool UseKoggeStone = false>
 __host__ __device__ inline bool is_square_attacked(const BoardState& board, int square,
                                                    Color attacker) {
     uint64_t attackers;
@@ -657,13 +833,270 @@ __host__ __device__ inline bool is_square_attacked(const BoardState& board, int 
     // NOTE: [pedagogical] For sliding pieces, we compute what a bishop/rook on the target
     // square could see, then check if any enemy bishop/queen or rook/queen is there.
     // Queens appear in both checks because they move both diagonally and orthogonally.
-    uint64_t diagonal = sliding_attacks(square, board.all_occupied, 4, 8);
+    uint64_t diagonal = sliding_attacks<UseKoggeStone>(square, board.all_occupied, 4, 8);
     attackers = diagonal & (board.pieces[attacker][BISHOP] | board.pieces[attacker][QUEEN]);
     if (attackers) return true;
 
-    uint64_t orthogonal = sliding_attacks(square, board.all_occupied, 0, 4);
+    uint64_t orthogonal = sliding_attacks<UseKoggeStone>(square, board.all_occupied, 0, 4);
     attackers = orthogonal & (board.pieces[attacker][ROOK] | board.pieces[attacker][QUEEN]);
     if (attackers) return true;
 
     return false;
+}
+
+// === Pin / Check Mask Helpers ===
+// NOTE: [pedagogical] These four helpers exist to support a faster legality filter that
+// avoids the per-move "copy the board, apply the move, check if the king is attacked"
+// pattern. Instead, we compute four pieces of information once per position:
+//   1. checkers          — bitboard of enemy pieces currently giving check
+//   2. check_mask        — squares a non-king move must land on to resolve check
+//   3. pin_rays[64]      — for each of our pieces that is pinned, the line it may
+//                          move along (king-exclusive, pinner-inclusive)
+//   4. enemy_attacks     — every square attacked by any enemy piece, used to filter
+//                          king moves
+// The legality filter then becomes O(1) bitwise math per pseudo-legal move.
+
+/**
+ * Bitboard of every piece of `attacker` that currently attacks `square`.
+ *
+ * Mirrors is_square_attacked but accumulates the attacker bitboard rather than
+ * short-circuiting. Returning the bitboard lets us tell single check from double check
+ * (popcount) and identify the checker for building the check mask.
+ */
+template<bool UseKoggeStone = false>
+__host__ __device__ inline uint64_t compute_checkers(const BoardState& board, int square,
+                                                     Color attacker) {
+    uint64_t checkers = 0;
+
+    // NOTE: [pedagogical] Pawn-attack reversal: see is_square_attacked. The same
+    // squares-relative-to-target logic applies — we just OR results instead of
+    // returning early.
+    uint64_t enemy_pawns = board.pieces[attacker][PAWN];
+    uint64_t sq_bb = 1ULL << square;
+    if (attacker == WHITE) {
+        uint64_t pawn_attackers = 0;
+        pawn_attackers |= (sq_bb >> 9) & ~FILE_H;
+        pawn_attackers |= (sq_bb >> 7) & ~FILE_A;
+        checkers |= pawn_attackers & enemy_pawns;
+    } else {
+        uint64_t pawn_attackers = 0;
+        pawn_attackers |= (sq_bb << 9) & ~FILE_A;
+        pawn_attackers |= (sq_bb << 7) & ~FILE_H;
+        checkers |= pawn_attackers & enemy_pawns;
+    }
+
+    checkers |= knight_attacks(square) & board.pieces[attacker][KNIGHT];
+    // NOTE: [edge case callout] King-attacks-king is impossible in legal play but we
+    // include it for symmetry with is_square_attacked. The bit is always 0 here.
+    checkers |= king_attacks(square)   & board.pieces[attacker][KING];
+
+    uint64_t diag = sliding_attacks<UseKoggeStone>(square, board.all_occupied, 4, 8);
+    checkers |= diag & (board.pieces[attacker][BISHOP] | board.pieces[attacker][QUEEN]);
+
+    uint64_t orth = sliding_attacks<UseKoggeStone>(square, board.all_occupied, 0, 4);
+    checkers |= orth & (board.pieces[attacker][ROOK]   | board.pieces[attacker][QUEEN]);
+
+    return checkers;
+}
+
+/**
+ * Build the check mask: the set of squares a non-king move must land on to be legal.
+ *
+ * - Not in check: all-ones (no constraint from check).
+ * - Single check by knight/pawn: the checker's square (only capture resolves it).
+ * - Single check by slider: squares between king and slider, plus the slider itself
+ *   (any block or capture resolves it).
+ * - Double check: 0 (only king moves are legal).
+ */
+__host__ __device__ inline uint64_t compute_check_mask(const BoardState& board,
+                                                       int king_sq, uint64_t checkers,
+                                                       Color attacker) {
+    if (checkers == 0) return ~0ULL;
+
+    // NOTE: [pedagogical] (x & (x - 1)) clears the lowest set bit. If the result is
+    // nonzero, x had at least two bits set. This is a branch-free popcount-equals-1
+    // test that avoids relying on a hardware popcount intrinsic.
+    if (checkers & (checkers - 1)) return 0ULL;
+
+    int checker_sq = lsb(checkers);
+    uint64_t checker_bb = 1ULL << checker_sq;
+
+    // Knight or pawn checks have no blockable squares — only capture resolves them.
+    bool is_slider = (checker_bb & (board.pieces[attacker][BISHOP]
+                                  | board.pieces[attacker][ROOK]
+                                  | board.pieces[attacker][QUEEN])) != 0;
+    if (!is_slider) return checker_bb;
+
+    // NOTE: [thought process] We walk one square at a time from the king toward the
+    // checker, accumulating each square visited. The walk is a clean alternative to
+    // intersecting bitboards from both endpoints — that approach has a subtle bug
+    // when the checker is adjacent to the king, because perpendicular rays from each
+    // endpoint intersect at off-line squares (e.g. king e1, queen e2: king's east ray
+    // and queen's SE ray both pass through f1, giving a spurious "blockable" square).
+    // The directional walk only ever visits squares on the king-checker line.
+    int king_file    = king_sq    % 8;
+    int king_rank    = king_sq    / 8;
+    int checker_file = checker_sq % 8;
+    int checker_rank = checker_sq / 8;
+    int df = (checker_file > king_file) ? 1 : (checker_file < king_file) ? -1 : 0;
+    int dr = (checker_rank > king_rank) ? 1 : (checker_rank < king_rank) ? -1 : 0;
+
+    uint64_t mask = 0;
+    int file = king_file, rank = king_rank;
+    while (true) {
+        file += df;
+        rank += dr;
+        int sq = rank * 8 + file;
+        mask |= (1ULL << sq);
+        if (sq == checker_sq) break;
+    }
+    return mask;
+}
+
+/**
+ * Detect pinned friendly pieces and record each one's pin ray.
+ *
+ * Walks each of the 8 ray directions from the king. The first blocker on a ray is a
+ * pin candidate if it's our piece; we then look at the next blocker. If that next
+ * blocker is an enemy slider that moves in this ray's direction, the candidate is
+ * pinned and its allowed-move mask is the squares from the king (exclusive) through
+ * the pinner (inclusive). The pinned piece may move along this line (capturing the
+ * pinner) but no further.
+ *
+ * Returns the bitboard of all pinned pieces. Fills `pin_rays_out[from_square]` with
+ * the pin ray for each pinned square; entries for non-pinned squares are not written
+ * (callers must initialize the array to 0 if they want unused entries to read as 0).
+ *
+ * NOTE: [performance improvement] The walk-one-square-at-a-time inner loop has the
+ * same warp-divergence shape as the naive ray attacks. It's called once per position
+ * (not per piece per direction), so the overall impact is small — but for completeness
+ * a Kogge-Stone style fill that finds the first and second blockers via shifts could
+ * eliminate divergence here too.
+ */
+__host__ __device__ inline uint64_t compute_pin_rays(const BoardState& board, int king_sq,
+                                                     Color us, uint64_t pin_rays_out[64]) {
+    Color them = (us == WHITE) ? BLACK : WHITE;
+    uint64_t our_pieces   = board.occupied[us];
+    uint64_t enemy_rq     = board.pieces[them][ROOK]   | board.pieces[them][QUEEN];
+    uint64_t enemy_bq     = board.pieces[them][BISHOP] | board.pieces[them][QUEEN];
+    uint64_t all_occ      = board.all_occupied;
+
+    const int file_delta[8] = { 0, 0, -1, +1,  -1, +1, -1, +1};
+    const int rank_delta[8] = {+1, -1,  0,  0,  +1, +1, -1, -1};
+
+    uint64_t pinned = 0;
+
+    int king_file = king_sq % 8;
+    int king_rank = king_sq / 8;
+
+    for (int dir = 0; dir < 8; dir++) {
+        // NOTE: [thought process] Orthogonal rays (dirs 0-3) can only be exploited by a
+        // rook or queen pin. Diagonal rays (dirs 4-7) only by a bishop or queen. We
+        // pick the matching enemy slider set per direction.
+        uint64_t enemy_sliders = (dir < 4) ? enemy_rq : enemy_bq;
+
+        int df = file_delta[dir];
+        int dr = rank_delta[dir];
+
+        int file = king_file;
+        int rank = king_rank;
+
+        // Walk to the first blocker
+        int candidate_sq = -1;
+        uint64_t ray_so_far = 0;  // squares from king-exclusive up to first blocker-inclusive
+        while (true) {
+            file += df;
+            rank += dr;
+            if (file < 0 || file > 7 || rank < 0 || rank > 7) break;
+            int sq = rank * 8 + file;
+            ray_so_far |= (1ULL << sq);
+            if (all_occ & (1ULL << sq)) {
+                candidate_sq = sq;
+                break;
+            }
+        }
+
+        // No blocker, or first blocker is enemy: no pin from this direction
+        if (candidate_sq < 0) continue;
+        if (!(our_pieces & (1ULL << candidate_sq))) continue;
+
+        // Walk past the candidate to find the next blocker
+        int pinner_sq = -1;
+        uint64_t ray_extension = 0;  // squares from candidate-exclusive to second blocker-inclusive
+        while (true) {
+            file += df;
+            rank += dr;
+            if (file < 0 || file > 7 || rank < 0 || rank > 7) break;
+            int sq = rank * 8 + file;
+            ray_extension |= (1ULL << sq);
+            if (all_occ & (1ULL << sq)) {
+                pinner_sq = sq;
+                break;
+            }
+        }
+
+        if (pinner_sq < 0) continue;
+        if (!(enemy_sliders & (1ULL << pinner_sq))) continue;
+
+        // Confirmed pin. The pin ray is everything we walked: king-exclusive through
+        // pinner-inclusive (which is ray_so_far | ray_extension).
+        pinned |= (1ULL << candidate_sq);
+        pin_rays_out[candidate_sq] = ray_so_far | ray_extension;
+    }
+
+    return pinned;
+}
+
+/**
+ * Compute the bitboard of every square attacked by any piece of `attacker`, with our
+ * king removed from occupancy.
+ *
+ * NOTE: [pedagogical] Removing our king from the occupancy mask before computing slider
+ * attacks is essential. Without this, an enemy rook checking the king on the e-file
+ * would have its attack ray "stop" at the king, hiding e-file squares behind the king
+ * from the enemy attack set — which would let the king illegally step backwards along
+ * the ray to e.g. e-king minus 1. By removing the king, the rook's ray extends through
+ * those squares, marking them as attacked.
+ */
+template<bool UseKoggeStone = false>
+__host__ __device__ inline uint64_t compute_enemy_attacks(const BoardState& board,
+                                                          int our_king_sq, Color attacker) {
+    uint64_t occ_no_king = board.all_occupied & ~(1ULL << our_king_sq);
+    uint64_t attacks = 0;
+
+    // === Pawns ===
+    uint64_t pawns = board.pieces[attacker][PAWN];
+    if (attacker == WHITE) {
+        attacks |= (pawns & ~FILE_A) << 7;   // NW captures
+        attacks |= (pawns & ~FILE_H) << 9;   // NE captures
+    } else {
+        attacks |= (pawns & ~FILE_H) >> 7;   // SE captures
+        attacks |= (pawns & ~FILE_A) >> 9;   // SW captures
+    }
+
+    // === Knights ===
+    uint64_t knights = board.pieces[attacker][KNIGHT];
+    while (knights) {
+        int sq = pop_lsb(knights);
+        attacks |= knight_attacks(sq);
+    }
+
+    // === King ===
+    if (board.pieces[attacker][KING]) {
+        attacks |= king_attacks(lsb(board.pieces[attacker][KING]));
+    }
+
+    // === Sliders ===
+    uint64_t bishops_queens = board.pieces[attacker][BISHOP] | board.pieces[attacker][QUEEN];
+    while (bishops_queens) {
+        int sq = pop_lsb(bishops_queens);
+        attacks |= sliding_attacks<UseKoggeStone>(sq, occ_no_king, 4, 8);
+    }
+    uint64_t rooks_queens = board.pieces[attacker][ROOK] | board.pieces[attacker][QUEEN];
+    while (rooks_queens) {
+        int sq = pop_lsb(rooks_queens);
+        attacks |= sliding_attacks<UseKoggeStone>(sq, occ_no_king, 0, 4);
+    }
+
+    return attacks;
 }
