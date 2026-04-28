@@ -376,21 +376,25 @@ def main() -> None:
 
     # ── 4. scaling_table.csv (thread sweep at fixed size) ─────────────────────
     # Pick the size with the most distinct thread-count OpenMP runs (i.e. the thread sweep);
-    # break ties by preferring larger sizes.
+    # break ties by preferring larger sizes. No serial data required — the 1-thread
+    # OpenMP run is used as baseline when no serial result exists for that size.
     def thread_run_count(s):
         return sum(1 for t in thread_counts if index.get((s, "openmp", t)))
 
     scaling_size = max(
-        (s for s in sizes if index.get((s, "serial", 1)) and thread_run_count(s) > 0),
+        (s for s in sizes if thread_run_count(s) > 0),
         key=lambda s: (thread_run_count(s), size_sort_key(s)),
         default=sizes[-1] if sizes else "10m",
     )
-    serial_ref = index.get((scaling_size, "serial", 1))
+    # Prefer actual serial result; fall back to 1-thread OpenMP as baseline.
+    serial_ref = (index.get((scaling_size, "serial", 1))
+                  or index.get((scaling_size, "openmp", 1)))
+    serial_ref_label = "serial" if index.get((scaling_size, "serial", 1)) else "1-thread OpenMP"
 
     # Estimate serial fraction from the highest thread-count point for Amdahl predictions
     best_t = max((t for t in thread_counts if index.get((scaling_size, "openmp", t))), default=None)
     s_frac_est = None
-    if serial_ref and best_t:
+    if serial_ref and best_t and best_t > 1:
         best_omp = index.get((scaling_size, "openmp", best_t))
         if best_omp:
             sp = serial_ref["execution_time_s"] / best_omp["execution_time_s"]
@@ -403,7 +407,7 @@ def main() -> None:
             continue
         speedup    = serial_ref["execution_time_s"] / omp["execution_time_s"] if serial_ref else None
         efficiency = speedup / t if speedup else None
-        s_frac     = amdahl_serial_frac(speedup, t) if speedup else None
+        s_frac     = amdahl_serial_frac(speedup, t) if speedup and t > 1 else None
         amdahl_max = 1.0 / s_frac if s_frac else None
         amdahl_pred = amdahl_predicted(s_frac_est, t) if s_frac_est else None
         scaling_rows.append({
@@ -643,6 +647,8 @@ Efficiency = Speedup / Threads.
 ---
 
 ## 3. Thread Scalability — {scaling_size} games (fixed size)
+
+Speedup baseline: **{serial_ref_label}** (1-thread time for this size).
 
 {md_table(scl_hdr, scl_md)}
 
