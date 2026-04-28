@@ -1,0 +1,2 @@
+size,n_games,threads,serial_time_s,openmp_time_s,speedup,efficiency_pct,serial_throughput,openmp_throughput,serial_frac_pct
+1b,1000000000,64,50836.80,999.10,50.88,79.50,19670.77,1000903.77,0.41

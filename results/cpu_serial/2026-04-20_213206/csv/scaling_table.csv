@@ -1,0 +1,2 @@
+threads,execution_time_s,throughput_games_s,moves_per_sec,speedup,efficiency_pct,serial_frac_pct,amdahl_max_speedup,amdahl_predicted_speedup
+64,999.10,1000903.77,401182249.09,50.88,79.50,0.41,244.38,50.88

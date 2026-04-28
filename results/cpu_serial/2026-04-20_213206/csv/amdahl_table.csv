@@ -1,0 +1,2 @@
+size,n_games,measured_threads,measured_speedup,serial_frac_pct,parallel_frac_pct,amdahl_max_speedup,predicted_64t,predicted_128t
+1b,1000000000,64,50.88,0.41,99.59,244.38,50.88,84.23
