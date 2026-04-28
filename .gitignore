@@ -22,3 +22,6 @@ code/
 
 # Claude internal
 .claude/
+
+# powerpoint files
+*.pptx
