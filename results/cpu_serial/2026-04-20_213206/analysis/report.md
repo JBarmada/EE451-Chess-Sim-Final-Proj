@@ -1,21 +1,21 @@
 # Chess Monte Carlo Simulation — HPC Results
 
 **Run ID:** `2026-04-20_213206`
-**Generated:** 2026-04-28T05:04:03Z
+**Generated:** 2026-04-28T05:12:33Z
 
 ---
 
 ## Hardware
 
 ```
-CPU:           N/A
-Sockets:       N/A
-Physical cores:N/A  (N/A per socket)
-Logical CPUs:  N/A  (SMT threads/core: N/A)
+CPU:           AMD EPYC 9124 16-Core Processor
+Sockets:       2
+Physical cores:32  (16 per socket)
+Logical CPUs:  64  (SMT threads/core: 2)
 Max freq:      N/A MHz
-L3 cache:      N/A
-Memory:        N/A
-NUMA nodes:    N/A
+L3 cache:      16384K
+Memory:        377.5 GB
+NUMA nodes:    2
 SLURM node:    N/A  (partition: N/A)
 SLURM job ID:  N/A
 ```
