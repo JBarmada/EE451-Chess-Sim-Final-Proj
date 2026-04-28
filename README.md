@@ -2,6 +2,8 @@
 
 A performance study of random chess game simulation comparing serial CPU, multi-threaded OpenMP, and (planned) CUDA GPU implementations. Conducted on the USC CARC Discovery cluster as part of EE 451 (Spring 2026).
 
+**Authors:** Jad Barmada · Eli Fast · Joyce Ng · Lian Fouse
+
 ---
 
 ## Research Question
@@ -198,7 +200,7 @@ Each completed analysis produces 8 CSVs and one report:
 
 If you use this code or data, please reference:
 
-> Barmada, J. (2026). *Parallel Chess Monte Carlo Simulation: A Performance Study on USC CARC.* EE 451 Final Project, University of Southern California.
+> Barmada, J., Fast, E., Ng, J., & Fouse, L. (2026). *Parallel Chess Monte Carlo Simulation: A Performance Study on USC CARC.* EE 451 Final Project, University of Southern California.
 
 The vendored chess move-generation library:
 
