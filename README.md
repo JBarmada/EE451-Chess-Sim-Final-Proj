@@ -192,16 +192,39 @@ The GPU study was run on a local workstation with an NVIDIA RTX 3090 Ti (not on 
 | CUDA Toolkit  | ≥ 11.0 (provides `nvcc` and `curand`) |
 | GCC / g++  | ≥ 8 (host compiler for `nvcc`) |
 
-### Step 3.2 — Build
+### Step 3.2 — Set the GPU architecture (important!)
+
+> ⚠️ **You must set `-arch` to match your GPU** before building. The default in `GPU_CUDA/Makefile` is `sm_70` (V100). Running a binary built for the wrong architecture will fail with `no kernel image is available for execution on the device` or run in a degraded compatibility mode with much lower throughput.
+
+Edit `NVCCFLAGS` in `GPU_CUDA/Makefile`:
+
+```makefile
+NVCCFLAGS = -std=c++17 -O2 -arch=sm_XX     # ← set XX for your GPU
+```
+
+Common values:
+
+| GPU                          | Architecture | `-arch` flag |
+|------------------------------|--------------|--------------|
+| Tesla V100                   | Volta        | `sm_70`      |
+| RTX 2080 Ti, Quadro RTX      | Turing       | `sm_75`      |
+| A100                         | Ampere (data center) | `sm_80` |
+| **RTX 3090 / 3090 Ti / 30-series** | Ampere | **`sm_86`** *(used for our published results)* |
+| RTX 4090 / 40-series         | Ada Lovelace | `sm_89`      |
+| H100                         | Hopper       | `sm_90`      |
+
+If you're unsure, run `nvidia-smi --query-gpu=name --format=csv` to identify your GPU and look up its compute capability on [NVIDIA's CUDA GPUs page](https://developer.nvidia.com/cuda-gpus).
+
+### Step 3.3 — Build
 
 ```bash
 cd GPU_CUDA
 make all                    # produces build/chess
 ```
 
-The Makefile compiles `main.cu` with `nvcc -std=c++17 -O2 -arch=sm_70 -lcurand`. The default architecture (`sm_70`) targets V100; for newer GPUs (e.g. `sm_86` for RTX 3090 Ti, `sm_89` for RTX 4090, `sm_90` for H100) edit `NVCCFLAGS` in `GPU_CUDA/Makefile`.
+This invokes `nvcc -std=c++17 -O2 -arch=sm_XX -lcurand` with whatever `-arch` you just set.
 
-### Step 3.3 — Smoke test
+### Step 3.4 — Smoke test
 
 ```bash
 ./build/chess 100000          # 100k games, naive sliding + legacy legality (default)
@@ -215,7 +238,7 @@ White wins / Black wins / Draws / 50-move statistics
 Recorded Games (PGN) for the first few games
 ```
 
-### Step 3.4 — Run with optimizations enabled
+### Step 3.5 — Run with optimizations enabled
 
 The kernel is templated on two compile-baked variants which are **runtime-selected** by command-line flag (all four versions are in the binary):
 
@@ -240,7 +263,7 @@ Reproducing the published optimization trajectory:
 | 2. Kogge-Stone      | `./build/chess 10000000 --kogge-stone`               | ~245 K games/sec     |
 | 3. Fast legality    | `./build/chess 10000000 --kogge-stone --fast-legality` | ~920 K games/sec     |
 
-### Step 3.5 — Run unit tests (correctness)
+### Step 3.6 — Run unit tests (correctness)
 
 The `test_*.cu` files validate move generation against a known-correct reference for each piece type:
 
