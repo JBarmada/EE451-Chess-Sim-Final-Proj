@@ -1,76 +1,76 @@
 # Parallel Checkmate
 
-A high-performance Monte Carlo chess simulator. Serial CPU, multi-threaded OpenMP, and (planned) CUDA GPU implementations, benchmarked on the USC CARC Discovery cluster.
+A high-performance Monte Carlo chess simulator. Serial CPU, multi-threaded OpenMP, and CUDA GPU implementations, benchmarked on the USC CARC Discovery cluster.
 
 **Authors:** Jad Barmada · Eli Fast · Joyce Ng · Lian Fouse
 **Course:** EE 451 — Parallel and Distributed Computation, USC, Spring 2026
 
 ---
 
-## Research Question
+## TL;DR for graders
 
-How does throughput, speedup, and statistical accuracy of Monte Carlo random-chess simulation scale across:
+```bash
+git clone https://github.com/JBarmada/Parallel-Checkmate.git
+cd Parallel-Checkmate
+```
 
-1. **Implementation strategy** — serial vs OpenMP vs CUDA
-2. **Thread count** — 1, 2, 4, 8, 16, 32, 64 threads
-3. **Problem size** — 1K to 1B simulated games
+Then jump to one of:
 
-Statistical accuracy is validated against François Labelle's 2019 reference checkmate rate of **15.55%**.
+| Goal                                  | Section |
+|---------------------------------------|---------|
+| Run a 1-minute smoke test (any host)  | [Quick smoke test](#1-quick-smoke-test-1-minute) |
+| Reproduce the full CPU study on CARC  | [CPU reproduction](#2-cpu-reproduction-on-carc) |
+| Reproduce the GPU study on CARC       | [GPU reproduction](#3-gpu-reproduction-on-carc) |
+| Just regenerate the report from existing CSVs | [Re-analyze](#4-re-analyze-existing-results) |
+| See the headline numbers              | [Headline results](#headline-results) |
 
 ---
 
-## Key Results
-
-Full results are in [`results/cpu_serial/2026-04-20_213206/`](results/cpu_serial/2026-04-20_213206/).
+## Headline results
 
 | Metric                                | Value                |
 |---------------------------------------|----------------------|
-| Peak throughput (64 threads, 1B games)| ~1.00 M games/sec    |
-| Serial 1B baseline                    | ~50,837 s (14.1 hrs) |
+| Best OpenMP throughput (64t, 1B games)| **1.00 M games/sec** |
+| Best GPU throughput (RTX 3090 Ti)     | **920 K games/sec**  |
+| Serial 1B baseline                    | 50,837 s (14.1 hrs)  |
 | Best speedup (64 threads, 1B games)   | **50.88×**           |
-| Parallel efficiency (64t, 1B)         | 79.5%                |
-| Estimated serial fraction (Amdahl `s`)| ~0.04%               |
-| Checkmate rate (1B games)             | 15.31% ✓             |
+| Parallel efficiency (64t, 10M)        | **97.78%**           |
+| Empirical Amdahl `s` (averaged)       | ~0.95%               |
+| Checkmate rate vs Labelle's 15.55%    | 15.31% ✓             |
 
-The full report is at [`results/cpu_serial/2026-04-20_213206/analysis/report.md`](results/cpu_serial/2026-04-20_213206/analysis/report.md).
-
----
-
-## Hardware
-
-Benchmarks ran on a CARC `epyc-64` node:
-
-- **CPU:** 2× AMD EPYC 9124 (16 cores/socket, 32 physical / 64 logical)
-- **Memory:** 377 GB
-- **NUMA:** 2 nodes
-- **L3 cache:** 16 MB
-
-Full hardware profiles are captured per run in `results/cpu_*/<run_id>/sim/hardware.txt`.
+Full data: [`results/cpu_serial/2026-04-20_213206/`](results/cpu_serial/2026-04-20_213206/).
+Full report: [`results/cpu_serial/2026-04-20_213206/analysis/report.md`](results/cpu_serial/2026-04-20_213206/analysis/report.md).
 
 ---
 
-## Repository Layout
+## Repository layout
 
 ```
-.
-├── CPU_Serial/              Serial C++ simulator
-│   ├── serial.cpp           Main entry
-│   └── chess.hpp            Disservin chess-library v0.9.4 (header-only)
-├── CPU_OpenMP/              OpenMP-parallel simulator
-│   ├── openMP.cpp
+Parallel-Checkmate/
+├── README.md                 ← you are here
+├── Makefile                  Builds 14 CPU binaries (7 sizes × 2 variants)
+├── CPU_Serial/
+│   ├── serial.cpp            Serial implementation
+│   └── chess.hpp             Disservin chess-library v0.9.4 (header-only)
+├── CPU_OpenMP/
+│   ├── openMP.cpp            OpenMP implementation
 │   └── chess.hpp
-├── GPU_CUDA/                CUDA implementation (planned)
-├── Makefile                 Builds all 14 binaries (7 sizes × 2 variants)
+├── GPU_CUDA/                 CUDA implementation
+│   ├── main.cu               Kernel entry + host driver
+│   ├── board.cuh / game.cuh / movegen.cuh / recording.cuh
+│   ├── test_*.cu             Per-piece movegen unit tests
+│   ├── Makefile              `make -C GPU_CUDA all` builds build/chess
+│   └── job.sl                SLURM job for V100
 ├── scripts/
-│   ├── build.sh             Compile all binaries on CARC
-│   ├── submit_all_runs.sh   Submit the full benchmark suite
-│   ├── run_serial.job       SLURM: serial 1k–100m
-│   ├── run_serial_1b.job    SLURM: serial 1B (~14 hrs)
-│   ├── run_openmp_scaling.job  SLURM: 10m × {1,2,4,8,16,32,64} threads
-│   ├── run_openmp_sizes.job    SLURM: all sizes × 64 threads
-│   ├── run_analyze.job      SLURM: post-processing
-│   ├── analyze_results.py   Aggregate raw summaries → CSVs + report
-│   └── capture_hardware.sh  Per-run hardware profile capture
+│   ├── build.sh              Compile all 14 CPU binaries
+│   ├── submit_all_runs.sh    Submit the full CPU benchmark suite
+│   ├── run_serial.job        SLURM: serial 1k–100m (~2 hr)
+│   ├── run_serial_1b.job     SLURM: serial 1B  (~14 hr)
+│   ├── run_openmp_scaling.job   SLURM: 10M × {1,2,4,8,16,32,64} threads
+│   ├── run_openmp_sizes.job  SLURM: all sizes × 64 threads
+│   ├── run_analyze.job       SLURM: post-processing
+│   ├── analyze_results.py    Aggregates raw summaries → CSVs + report
+│   └── capture_hardware.sh   Per-run hardware profile capture
 └── results/
     ├── cpu_serial/<run_id>/{sim,csv,analysis}/
     └── cpu_openmp/<run_id>/{sim,csv,analysis}/
@@ -78,132 +78,230 @@ Full hardware profiles are captured per run in `results/cpu_*/<run_id>/sim/hardw
 
 ---
 
-## Requirements
+## Software requirements
 
-- **GCC ≥ 9** with OpenMP (`-fopenmp`)
-- **C++17** (the code uses `std::filesystem`)
-- **Python ≥ 3.9** (standard library only — no `pip install` needed)
-- **SLURM** scheduler (only required for the CARC workflow)
+| Tool      | Version                  | Where it's needed                  |
+|-----------|--------------------------|------------------------------------|
+| GCC / g++ | ≥ 9 (C++17 + OpenMP)     | CPU build (`module load gcc` on CARC) |
+| NVCC      | CUDA 11+, `sm_70`        | GPU build (`module load cuda`) |
+| Python    | ≥ 3.9, **stdlib only**   | Analysis script (`module load python`) |
+| SLURM     | any                      | CARC job submission |
 
-The `chess.hpp` library by [Disservin](https://github.com/Disservin/chess-library) is vendored at v0.9.4. No external chess dependencies.
+No `pip install` and no external chess library — `chess.hpp` is vendored in-tree.
 
 ---
 
-## Reproducing the Study
+## 1. Quick smoke test (1 minute)
 
-### Option A — Full reproduction on CARC
+Verifies the toolchain works. Compiles one OpenMP binary and runs 100k games on whatever cores are available locally.
 
 ```bash
-# 1. Clone and enter the repo
-git clone https://github.com/JBarmada/Parallel-Checkmate.git
-cd Parallel-Checkmate
+make sim_openmp_100k
+OMP_NUM_THREADS=4 ./sim_openmp_100k
+```
 
-# 2. Build all 14 binaries
+**Expected output** ends with a summary like:
+
+```
+Execution Time: ~0.15 seconds
+Throughput:     ~700,000 games/sec
+White Wins:     ~7.7%
+Black Wins:     ~7.7%
+CHECKMATE:      ~15.3%
+```
+
+Detailed stats land in `results/100k_openmp/4/summary.txt`. If you see this, the build works.
+
+---
+
+## 2. CPU reproduction on CARC
+
+This is the canonical reproduction path. Five steps, ~2.5 hours wall time (or +14 hr if you also want the 1B serial baseline).
+
+### Step 2.1 — Build all CPU binaries
+
+```bash
 module load gcc
 bash scripts/build.sh
+```
 
-# 3. Submit the full benchmark suite
-#    Submits 4 jobs in parallel (serial, omp_scaling, omp_sizes)
-#    plus an analysis job that runs after they all succeed.
-bash scripts/submit_all_runs.sh
+This writes a build manifest to `scripts/build_manifest.txt` and produces 14 binaries (`sim_serial_{1k…1b}`, `sim_openmp_{1k…1b}`).
 
-# Optional: include the 14-hour 1B serial baseline
+### Step 2.2 — Submit the benchmark suite
+
+```bash
+bash scripts/submit_all_runs.sh                # ~2.5 hours total
+# or, including the 14-hour serial 1B baseline:
 bash scripts/submit_all_runs.sh --include-1b
+```
 
-# 4. Monitor
+Submits 4 SLURM jobs in parallel and a 5th analysis job that depends on them via `--dependency=afterok`:
+
+| Job                    | Wall   | What it does                                |
+|------------------------|--------|---------------------------------------------|
+| `run_serial.job`       | 2.5 hr | Serial 1k → 100M baselines                  |
+| `run_serial_1b.job`    | 14 hr  | Serial 1B baseline (opt-in via `--include-1b`) |
+| `run_openmp_scaling.job` | 1.5 hr | 10M games × {1,2,4,8,16,32,64} threads (exclusive node) |
+| `run_openmp_sizes.job` | 2 hr   | All sizes × 64 threads (exclusive node)     |
+| `run_analyze.job`      | 15 min | Aggregates everything → CSVs + Markdown report |
+
+All 5 jobs share a single `RUN_ID=$(date +%Y-%m-%d_%H%M%S)` so their outputs land in the same dated folder.
+
+### Step 2.3 — Monitor
+
+```bash
 squeue -u $USER --format='%.10i %.25j %.8T %.10M %.12l'
 ```
 
-All four jobs share a single `RUN_ID=$(date +%Y-%m-%d_%H%M%S)` so their results land in the same dated folder. The analysis job aggregates everything into CSVs and a Markdown report.
+### Step 2.4 — Inspect the results
 
-### Option B — Single benchmark locally
+After the analysis job completes (~2.5 hr total wall, less if you have priority):
 
-```bash
-# Compile a single binary
-make sim_openmp_10m
-
-# Run it (output respects CHESS_RUN_DIR if set)
-OMP_NUM_THREADS=8 ./sim_openmp_10m
-
-# Result lands in results/10m_openmp/8/summary.txt by default
+```
+results/cpu_serial/<RUN_ID>/sim/        ← per-size raw summary.txt files + hardware.txt
+results/cpu_openmp/<RUN_ID>/sim/        ← per-(size,threads) raw summary.txt files
+results/cpu_serial/<RUN_ID>/csv/        ← 8 aggregated CSVs
+results/cpu_serial/<RUN_ID>/analysis/report.md  ← human-readable report
 ```
 
-### Option C — Re-analyse existing raw results
+The report contains a hardware block, the throughput table, the speedup/efficiency table, the size-scaling table, the Amdahl analysis, and a statistical-accuracy table.
+
+### Step 2.5 — Verify
+
+Quick sanity checks the grader can run on the report:
+
+| Check                                         | Expected               |
+|-----------------------------------------------|------------------------|
+| Throughput at 64 threads, 10M games           | ≈ 1.0 M games/sec      |
+| Speedup at 64 threads, 10M games              | ≈ 62×                  |
+| Parallel efficiency at all thread counts      | 96–98%                 |
+| Checkmate rate at 1B games                    | 15.31% (Labelle: 15.55%) |
+| White/Black win rate symmetry                 | 7.66% / 7.65% within 0.1 pp |
+
+---
+
+## 3. GPU reproduction on CARC
+
+The GPU implementation is a self-contained subdirectory with its own `Makefile` and SLURM script.
+
+### Step 3.1 — Build
+
+```bash
+cd GPU_CUDA
+module purge
+module load nvhpc gcc/8.5.0 cuda
+make all                    # produces build/chess
+```
+
+The Makefile compiles `main.cu` with `nvcc -std=c++17 -O2 -arch=sm_70 -lcurand`. The default kernel target is the V100 (`sm_70`); for newer GPUs (Ampere/Hopper) bump `-arch` accordingly in `GPU_CUDA/Makefile`.
+
+### Step 3.2 — Smoke test (interactive on a GPU node)
+
+```bash
+./build/chess 100000          # 100k games, naive sliding + legacy legality (default)
+```
+
+Expected last lines:
+
+```
+Games/second:  ~150,000–250,000   (depending on GPU)
+White wins / Black wins / Draws / 50-move statistics
+Recorded Games (PGN) for the first few games
+```
+
+### Step 3.3 — Run with optimizations enabled
+
+The kernel is templated on two compile-baked variants which are **runtime-selected** by command-line flag (all four versions are in the binary):
+
+```bash
+./build/chess 100000000 --kogge-stone --fast-legality
+```
+
+Flags:
+
+| Flag                | Effect                                          |
+|---------------------|-------------------------------------------------|
+| `--naive`           | Square-by-square sliding (default)              |
+| `--kogge-stone`     | Parallel-prefix sliding fill, no warp divergence |
+| `--legacy-legality` | Copy-make legality check (default)              |
+| `--fast-legality`   | Precomputed pin/check masks (≈3.8× faster)      |
+
+### Step 3.4 — Submit as a SLURM job
+
+```bash
+cd GPU_CUDA
+sbatch job.sl              # 1-minute V100 job; output → gpujob.out
+```
+
+To change the workload size or flags, edit the `./build/chess` line at the bottom of `job.sl`.
+
+### Step 3.5 — Run unit tests (correctness)
+
+The `test_*.cu` files validate move generation against a known-correct reference for each piece type:
+
+```bash
+make tests
+for t in build/test_*; do echo "=== $t ==="; "$t"; done
+```
+
+All tests should print `PASSED`.
+
+---
+
+## 4. Re-analyze existing results
+
+If raw `summary.txt` files already exist (e.g. for the committed `2026-04-20_213206` run), regenerate the CSVs and report locally without re-running any simulations:
 
 ```bash
 python3 scripts/analyze_results.py \
-  --serial-sim-dir  results/cpu_serial/<run_id>/sim \
-  --openmp-sim-dir  results/cpu_openmp/<run_id>/sim \
-  --csv-dir         results/cpu_serial/<run_id>/csv \
-  --analysis-dir    results/cpu_serial/<run_id>/analysis \
+  --serial-sim-dir  results/cpu_serial/2026-04-20_213206/sim \
+  --openmp-sim-dir  results/cpu_openmp/2026-04-20_213206/sim \
+  --csv-dir         results/cpu_serial/2026-04-20_213206/csv \
+  --analysis-dir    results/cpu_serial/2026-04-20_213206/analysis \
   --build-manifest  scripts/build_manifest.txt \
-  --run-id          <run_id>
+  --run-id          2026-04-20_213206
 ```
+
+Standard library only — no `pip install`, no external dependencies.
 
 ---
 
-## Implementation Notes
+## How the code works
 
-### Game-count is compile-time
+### CPU: game count is compile-time, thread count is runtime
 
-Each binary is compiled with a fixed `-DNUM_GAMES=N`. The `Makefile` defines 7 sizes per variant:
+Each binary is compiled with a fixed `-DNUM_GAMES=N` (`Makefile` produces 7 sizes per variant: 1k, 10k, 100k, 1m, 10m, 100m, 1b). This lets the compiler unroll/optimise more aggressively than a runtime parameter would.
 
-```
-sim_serial_1k  sim_serial_10k  sim_serial_100k  sim_serial_1m
-sim_serial_10m sim_serial_100m sim_serial_1b
-sim_openmp_*  (same 7 sizes)
-```
+The OpenMP binary calls `omp_get_max_threads()`, which respects `OMP_NUM_THREADS`. So a single binary handles every thread count — no recompilation needed. Output paths automatically include the thread count: `results/<size>_openmp/<threads>/summary.txt`.
 
-This lets the compiler unroll/optimise more aggressively than a runtime parameter.
+### GPU: 1 thread = 1 game; templated variants
 
-### Thread count is runtime
-
-The OpenMP binary calls `omp_get_max_threads()`, which respects `OMP_NUM_THREADS`. This means a single binary handles every thread count — no recompilation needed. The output path includes the thread count: `results/<size>_openmp/<threads>/summary.txt`.
+Each CUDA thread plays one complete game from initial position to termination. 256 threads per block; grid sizes to cover the requested game count. Per-thread `curandState` ensures statistically independent random streams. No on-device reduction — each thread writes its result into `d_results[global_id]`, and the host scans the array after `cudaMemcpy`. Sliding-attack and legality-filter algorithm choices are compile-time template parameters; the host picks one of the four pre-compiled variants at launch via the CLI flags above.
 
 ### Output redirection
 
-Both binaries respect `CHESS_RUN_DIR` (env var). The SLURM jobs set this to the dated run folder so results don't overwrite each other across runs.
+Both CPU binaries respect `CHESS_RUN_DIR` (env var). The SLURM jobs set this to a dated run folder so results don't overwrite each other across runs. Without the env var, output lands in `./results/...` (relative to CWD).
 
 ### Memory: O(1)
 
-A previous version stored every game's ply count in a `std::vector<int>`, exhausting memory at 1B games (~4 GB just for that vector). The current version uses a `long long` running sum — constant memory regardless of game count.
-
----
-
-## Analysis Outputs
-
-Each completed analysis produces 8 CSVs and one report:
-
-| File                          | Contents                                                    |
-|-------------------------------|-------------------------------------------------------------|
-| `metrics_raw.csv`             | Full record per `summary.txt` — all metrics, all runs       |
-| `throughput.csv`              | Games/sec, moves/sec, games/sec/thread                      |
-| `speedup_table.csv`           | Speedup + efficiency per (size, threads)                    |
-| `scaling_table.csv`           | Thread sweep at fixed problem size with Amdahl predictions  |
-| `size_scaling_table.csv`      | Size sweep at fixed max thread count                        |
-| `full_matrix.csv`             | Complete size × thread matrix                               |
-| `amdahl_table.csv`            | Estimated serial fraction + predictions at 64 / 128 threads |
-| `statistical_accuracy.csv`    | Wilson 95% CI + z-test vs Labelle 15.55% baseline           |
-| `analysis/report.md`          | Markdown report aggregating all of the above with prose     |
+The accumulators (`gameLengthSum`, win/draw counters, etc.) are constant-size scalars — no per-game storage. This was a fix from an earlier version that pre-allocated a `std::vector<int>` of length `NUM_GAMES`, which OOMed at 1B games.
 
 ---
 
 ## Reproducibility
 
-- **Source determinism:** Each game uses a thread-local `std::mt19937` seeded from `std::random_device`. Runs are not bit-for-bit reproducible — the design philosophy is **statistical** convergence at 10M+ games (where standard errors become negligible).
-- **Hardware capture:** Every run records `lscpu`, cache hierarchy, NUMA topology, SLURM allocation, compiler version, and OpenMP runtime info to `hardware.txt`.
-- **Build manifest:** `scripts/build.sh` writes timestamp, hostname, GCC version, and flags to `scripts/build_manifest.txt` — included verbatim in every analysis report.
-- **Module versions:** CARC uses unversioned modules (`module load gcc`); current default is GCC 13.3.0. The build manifest records the actual version used.
+- **RNG:** Per-thread `std::mt19937` (CPU) / `curandState` (GPU), seeded from `std::random_device` / `time(nullptr)`. Runs are **not** bit-for-bit reproducible by design — the study targets statistical convergence at 10M+ games.
+- **Hardware capture:** Every SLURM run records `lscpu`, cache hierarchy, NUMA topology, frequency governor, SLURM allocation details, compiler version, and OpenMP runtime info to `hardware.txt` alongside the simulation outputs.
+- **Build manifest:** `scripts/build.sh` writes timestamp, hostname, GCC version, modules loaded, and exact compile flags to `scripts/build_manifest.txt`. The analysis report quotes this verbatim.
+- **CARC modules:** Unversioned (`module load gcc`, `module load cuda`); the manifest records the actual versions resolved at build time. Current defaults: GCC 13.3.0 for CPU, CUDA via the `nvhpc` module for GPU.
 
 ---
 
 ## Citing
 
-If you use this code or data, please reference:
-
 > Barmada, J., Fast, E., Ng, J., & Fouse, L. (2026). *Parallel Checkmate: A Performance Study of Monte Carlo Chess Simulation on USC CARC.* EE 451 Final Project, University of Southern California.
 
-The vendored chess move-generation library:
+Vendored library:
 
 > Disservin. (2024). *chess-library* v0.9.4. https://github.com/Disservin/chess-library
 
@@ -215,4 +313,4 @@ Reference checkmate-rate baseline:
 
 ## License
 
-Source code in `CPU_Serial/`, `CPU_OpenMP/`, `GPU_CUDA/`, and `scripts/` is released under the MIT License. The vendored `chess.hpp` retains its original [MIT license](https://github.com/Disservin/chess-library/blob/master/LICENSE).
+Source code under `CPU_Serial/`, `CPU_OpenMP/`, `GPU_CUDA/`, and `scripts/` is released under the MIT License. The vendored `chess.hpp` retains its original [MIT license](https://github.com/Disservin/chess-library/blob/master/LICENSE).
