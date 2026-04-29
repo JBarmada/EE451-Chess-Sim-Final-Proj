@@ -20,8 +20,7 @@ Then jump to one of:
 |---------------------------------------|---------|
 | Run a 1-minute smoke test (any host)  | [Quick smoke test](#1-quick-smoke-test-1-minute) |
 | Reproduce the full CPU study on CARC  | [CPU reproduction](#2-cpu-reproduction-on-carc) |
-| Reproduce the GPU study on CARC       | [GPU reproduction](#3-gpu-reproduction-on-carc) |
-| Just regenerate the report from existing CSVs | [Re-analyze](#4-re-analyze-existing-results) |
+| Just regenerate the report from existing CSVs | [Re-analyze](#3-re-analyze-existing-results) |
 | See the headline numbers              | [Headline results](#headline-results) |
 
 ---
@@ -180,75 +179,7 @@ Quick sanity checks the grader can run on the report:
 
 ---
 
-## 3. GPU reproduction on CARC
-
-The GPU implementation is a self-contained subdirectory with its own `Makefile` and SLURM script.
-
-### Step 3.1 — Build
-
-```bash
-cd GPU_CUDA
-module purge
-module load nvhpc gcc/8.5.0 cuda
-make all                    # produces build/chess
-```
-
-The Makefile compiles `main.cu` with `nvcc -std=c++17 -O2 -arch=sm_70 -lcurand`. The default kernel target is the V100 (`sm_70`); for newer GPUs (Ampere/Hopper) bump `-arch` accordingly in `GPU_CUDA/Makefile`.
-
-### Step 3.2 — Smoke test (interactive on a GPU node)
-
-```bash
-./build/chess 100000          # 100k games, naive sliding + legacy legality (default)
-```
-
-Expected last lines:
-
-```
-Games/second:  ~150,000–250,000   (depending on GPU)
-White wins / Black wins / Draws / 50-move statistics
-Recorded Games (PGN) for the first few games
-```
-
-### Step 3.3 — Run with optimizations enabled
-
-The kernel is templated on two compile-baked variants which are **runtime-selected** by command-line flag (all four versions are in the binary):
-
-```bash
-./build/chess 100000000 --kogge-stone --fast-legality
-```
-
-Flags:
-
-| Flag                | Effect                                          |
-|---------------------|-------------------------------------------------|
-| `--naive`           | Square-by-square sliding (default)              |
-| `--kogge-stone`     | Parallel-prefix sliding fill, no warp divergence |
-| `--legacy-legality` | Copy-make legality check (default)              |
-| `--fast-legality`   | Precomputed pin/check masks (≈3.8× faster)      |
-
-### Step 3.4 — Submit as a SLURM job
-
-```bash
-cd GPU_CUDA
-sbatch job.sl              # 1-minute V100 job; output → gpujob.out
-```
-
-To change the workload size or flags, edit the `./build/chess` line at the bottom of `job.sl`.
-
-### Step 3.5 — Run unit tests (correctness)
-
-The `test_*.cu` files validate move generation against a known-correct reference for each piece type:
-
-```bash
-make tests
-for t in build/test_*; do echo "=== $t ==="; "$t"; done
-```
-
-All tests should print `PASSED`.
-
----
-
-## 4. Re-analyze existing results
+## 3. Re-analyze existing results
 
 If raw `summary.txt` files already exist (e.g. for the committed `2026-04-20_213206` run), regenerate the CSVs and report locally without re-running any simulations:
 
