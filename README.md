@@ -20,7 +20,8 @@ Then jump to one of:
 |---------------------------------------|---------|
 | Run a 1-minute smoke test (any host)  | [Quick smoke test](#1-quick-smoke-test-1-minute) |
 | Reproduce the full CPU study on CARC  | [CPU reproduction](#2-cpu-reproduction-on-carc) |
-| Just regenerate the report from existing CSVs | [Re-analyze](#3-re-analyze-existing-results) |
+| Reproduce the GPU study on a local CUDA machine | [GPU reproduction](#3-gpu-reproduction-on-a-local-machine) |
+| Just regenerate the report from existing CSVs | [Re-analyze](#4-re-analyze-existing-results) |
 | See the headline numbers              | [Headline results](#headline-results) |
 
 ---
@@ -179,7 +180,80 @@ Quick sanity checks the grader can run on the report:
 
 ---
 
-## 3. Re-analyze existing results
+## 3. GPU reproduction on a local machine
+
+The GPU study was run on a local workstation with an NVIDIA RTX 3090 Ti (not on CARC). The GPU implementation is a self-contained subdirectory with its own `Makefile`. Any modern NVIDIA GPU with CUDA 11+ should work; you may need to bump `-arch` in `GPU_CUDA/Makefile` for newer architectures.
+
+### Step 3.1 — Prerequisites
+
+| Tool       | Version                  |
+|------------|--------------------------|
+| NVIDIA driver | matching your CUDA version |
+| CUDA Toolkit  | ≥ 11.0 (provides `nvcc` and `curand`) |
+| GCC / g++  | ≥ 8 (host compiler for `nvcc`) |
+
+### Step 3.2 — Build
+
+```bash
+cd GPU_CUDA
+make all                    # produces build/chess
+```
+
+The Makefile compiles `main.cu` with `nvcc -std=c++17 -O2 -arch=sm_70 -lcurand`. The default architecture (`sm_70`) targets V100; for newer GPUs (e.g. `sm_86` for RTX 3090 Ti, `sm_89` for RTX 4090, `sm_90` for H100) edit `NVCCFLAGS` in `GPU_CUDA/Makefile`.
+
+### Step 3.3 — Smoke test
+
+```bash
+./build/chess 100000          # 100k games, naive sliding + legacy legality (default)
+```
+
+Expected output ends with:
+
+```
+Games/second:  ~150,000–250,000   (depending on GPU)
+White wins / Black wins / Draws / 50-move statistics
+Recorded Games (PGN) for the first few games
+```
+
+### Step 3.4 — Run with optimizations enabled
+
+The kernel is templated on two compile-baked variants which are **runtime-selected** by command-line flag (all four versions are in the binary):
+
+```bash
+./build/chess 100000000 --kogge-stone --fast-legality
+```
+
+Flags:
+
+| Flag                | Effect                                          |
+|---------------------|-------------------------------------------------|
+| `--naive`           | Square-by-square sliding (default)              |
+| `--kogge-stone`     | Parallel-prefix sliding fill, no warp divergence |
+| `--legacy-legality` | Copy-make legality check (default)              |
+| `--fast-legality`   | Precomputed pin/check masks (≈3.8× faster)      |
+
+Reproducing the published optimization trajectory:
+
+| Stage               | Command                                              | Expected ~throughput |
+|---------------------|------------------------------------------------------|----------------------|
+| 1. Naive baseline   | `./build/chess 10000000`                             | ~240 K games/sec     |
+| 2. Kogge-Stone      | `./build/chess 10000000 --kogge-stone`               | ~245 K games/sec     |
+| 3. Fast legality    | `./build/chess 10000000 --kogge-stone --fast-legality` | ~920 K games/sec     |
+
+### Step 3.5 — Run unit tests (correctness)
+
+The `test_*.cu` files validate move generation against a known-correct reference for each piece type:
+
+```bash
+make tests
+for t in build/test_*; do echo "=== $t ==="; "$t"; done
+```
+
+All tests should print `PASSED`.
+
+---
+
+## 4. Re-analyze existing results
 
 If raw `summary.txt` files already exist (e.g. for the committed `2026-04-20_213206` run), regenerate the CSVs and report locally without re-running any simulations:
 
